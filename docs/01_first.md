@@ -17,15 +17,15 @@
 
 ## ビルドする
 
-無限ループするだけの関数`entry`を含む`first.c`を用意した。
+無限ループするだけの関数`entry`を含む`01_first.c`を用意した。
 
 ```
-gcc -nostdlib -e _entry first.c -o first.exe
+gcc -nostdlib -e _entry 01_first.c -o 01_first.exe
 ```
 
 `-e`でエントリポイントを指定する。関数名は`entry`なのになぜか`_`を付けて指定すると吉。
 
-UEFIで実行してもらうために、`first.exe`の中のヘッダの
+UEFIで実行してもらうために、`01_first.exe`の中のヘッダの
 `Opt.Subsys` ([TSXBIN](http://www.net3-tv.net/~m-tsuchy/tsuchy/dlpage.htm)での表示) を0x000Aに書き換える。
 
 ## バイナリをディスクイメージに入れる
@@ -47,7 +47,7 @@ QEMUをインストールし、バイナリにパスを通す。
 UEFI bios for QEMUのファイルを用意する。 (zipで落として展開するなど)
 
 ```
-qemu-system-i386 -bios bios32.bin -fda first.img
+qemu-system-i386 -bios bios32.bin -fda 01_first.img
 ```
 
 `bios32.bin`は、UEFI bios for QEMUの中の`bios32.bin`のパスを指定する。
@@ -58,7 +58,7 @@ qemu-system-i386 -bios bios32.bin -fda first.img
 これを避けるには、以下のおまじないでフロッピーイメージを指定する。
 
 ```
-qemu-system-i386 -bios bios32.bin -drive format=raw,if=floppy,file=first.img
+qemu-system-i386 -bios bios32.bin -drive format=raw,if=floppy,file=01_first.img
 ```
 
 このおまじないの構築には、ここが参考になった。
