@@ -28,6 +28,9 @@ if (substr($exeData, $newHeaderPos, 4) ne "\x50\x45\x00\x00") { die ("not exe fi
 my $optHeaderSize = unpack("S", substr($exeData, $newHeaderPos + 0x14));
 if ($optHeaderSize < 0x46) { die("opt header too small\n"); }
 
+# set imagebase to 0x00400000
+substr($exeData, $newHeaderPos + 0x34, 4) = "\x00\x00\x40\x00";
+
 # set subsys to 0x000A
 substr($exeData, $newHeaderPos + 0x5C, 2) = "\x0A\x00";
 

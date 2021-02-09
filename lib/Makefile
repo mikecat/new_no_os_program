@@ -6,7 +6,7 @@ RM=rm -f
 TARGET=libnnop.a
 TARGET_D=libnnop_d.a
 
-OBJS=serial_direct.o my_printf.o
+OBJS=serial_direct.o my_printf.o entry_paging.o pages.o
 
 OBJS_D=$(join $(addsuffix _d,$(basename $(OBJS))),$(suffix $(OBJS)))
 
@@ -31,6 +31,12 @@ $(TARGET_D): $(OBJS_D)
 	$(CC) -c $(CFLAGS_D) -o $@ $^
 
 %.o: %.c
+	$(CC) -c $(CFLAGS) -o $@ $^
+
+%_d.o: %.S
+	$(CC) -c $(CFLAGS_D) -o $@ $^
+
+%.o: %.S
 	$(CC) -c $(CFLAGS) -o $@ $^
 
 .PHONY: clean

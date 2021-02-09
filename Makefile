@@ -6,6 +6,9 @@ RM=rm -f
 ENTRY_NO_PAGING=_entry
 ENTRY_PAGING=_entry_paging
 
+IMAGE_BASE_NO_PAGING=0x00400000
+IMAGE_BASE_PAGING=0xc0000000
+
 TARGETS_NO_PAGING= \
 	01_first.img \
 	03_serial.img \
@@ -14,6 +17,7 @@ TARGETS_NO_PAGING= \
 # --- END_OF_TARGETS ---
 
 TARGETS_PAGING= \
+	06_paging.img \
 # --- END_OF_TARGETS ---
 
 TARGETS=$(TARGETS_NO_PAGING) $(TARGETS_PAGING)
@@ -31,11 +35,13 @@ all: release debug
 
 %_d.img: %.c lib/libnnop_d.a
 	$(CC) -e $(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(addsuffix _d.img,$(basename $(TARGETS_NO_PAGING))))")),$(ENTRY_NO_PAGING) $(ENTRY_PAGING)) \
+		-Wl,--image-base=$(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(addsuffix _d.img,$(basename $(TARGETS_NO_PAGING))))")),$(IMAGE_BASE_NO_PAGING) $(IMAGE_BASE_PAGING)) \
 		$(CFLAGS_D) -o $*_d.exe $< -lnnop_d
 	./exe2img.pl $*_d.exe $@
 
 %.img: %.c lib/libnnop.a
 	$(CC) -e $(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(TARGETS_NO_PAGING))")),$(ENTRY_NO_PAGING) $(ENTRY_PAGING)) \
+		-Wl,--image-base=$(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(TARGETS_NO_PAGING))")),$(IMAGE_BASE_NO_PAGING) $(IMAGE_BASE_PAGING)) \
 		$(CFLAGS) -o $*.exe $< -lnnop
 	./exe2img.pl $*.exe $@
 
