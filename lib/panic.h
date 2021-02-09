@@ -1,0 +1,6 @@
+#ifndef PANIC_H_GUARD_8A38BAD6_23B1_447F_A409_C82A7B1129F8
+#define PANIC_H_GUARD_8A38BAD6_23B1_447F_A409_C82A7B1129F8
+
+void panic(const char* message);
+
+#endif
