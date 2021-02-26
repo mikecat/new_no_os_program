@@ -3,36 +3,26 @@
 use strict;
 use warnings;
 
-if (@ARGV != 2) {
-	warn "Usage: exe2img.pl input_exe output_img\n";
+if (@ARGV != 2 && @ARGV != 3) {
+	warn "Usage: file2img.pl input_file output_img [file_name_in_img]\n";
 	exit 1;
 }
 
-my $exeName = $ARGV[0];
+my $inName = $ARGV[0];
 my $imgName = $ARGV[1];
+my $fileName = @ARGV >= 3 ? $ARGV[2] : "BOOTIA32.EFI";
 
-# read exe file
-open(EXE, "< $exeName") or die("failed to open $exeName\n");
-binmode(EXE);
-my $exeData = "";
-while (<EXE>) { $exeData .= $_; }
-close(EXE);
+my @fileParts = split(/\./, uc($fileName));
+push(@fileParts, "");
+push(@fileParts, "");
+my $fileName2 = substr($fileParts[0] . "        ", 0, 8) . substr($fileParts[1] . "   ", 0, 3);
 
-# check parameters
-my $exeDataLen = length($exeData);
-if ($exeDataLen < 0x40) { die("exe too small (check 1)\n"); }
-if (substr($exeData, 0, 2) ne "\x4D\x5A") { die ("not exe file (check 1)\n"); }
-my $newHeaderPos = unpack("L", substr($exeData, 0x3C, 4));
-if ($exeDataLen < $newHeaderPos + 0x5E) { die("exe too small (check 2)\n"); }
-if (substr($exeData, $newHeaderPos, 4) ne "\x50\x45\x00\x00") { die ("not exe file (check 2)\n"); }
-my $optHeaderSize = unpack("S", substr($exeData, $newHeaderPos + 0x14));
-if ($optHeaderSize < 0x46) { die("opt header too small\n"); }
-
-# set imagebase to 0x00400000
-substr($exeData, $newHeaderPos + 0x34, 4) = "\x00\x00\x40\x00";
-
-# set subsys to 0x000A
-substr($exeData, $newHeaderPos + 0x5C, 2) = "\x0A\x00";
+# read file
+open(FILE, "< $inName") or die("failed to open $inName\n");
+binmode(FILE);
+my $fileData = "";
+while (<FILE>) { $fileData .= $_; }
+close(FILE);
 
 # build disk image
 
@@ -50,7 +40,8 @@ $diskImage .= ("\x90" x (0x200 - 2 - length($diskImage))) . "\x55\xAA";
 # FAT
 my @fatData = (0xFF0, 0xFFF, 0xFFF, 0xFFF);
 
-my $sectNum = ($exeDataLen + 511) >> 9;
+my $fileDataLen = length($fileData);
+my $sectNum = ($fileDataLen + 511) >> 9;
 for (my $i = 0; $i < $sectNum - 1; $i++) {
 	push(@fatData, $i + 5);
 }
@@ -87,14 +78,14 @@ $efiDir .= ("\x00" x (0x200 - length($efiDir)));
 my $bootDir = 
 	".          \x10" . ("\x00" x 10) . $timeDate . "\x03\x00" . "\x00\x00\x00\x00" .
 	"..         \x10" . ("\x00" x 10) . $timeDate . "\x02\x00" . "\x00\x00\x00\x00" .
-	"BOOTIA32EFI\x00" . ("\x00" x 10) . $timeDate . "\x04\x00" . pack("L", $exeDataLen);
+	$fileName2 . "\x00" . ("\x00" x 10) . $timeDate . "\x04\x00" . pack("L", $fileDataLen);
 $bootDir .= ("\x00" x (0x200 - length($bootDir)));
 
 $diskImage .= $rootDir . $efiDir . $bootDir;
 
 # file and rest
 
-$diskImage .= $exeData;
+$diskImage .= $fileData;
 $diskImage .= ("\x00" x (0x168000 - length($diskImage)));
 
 # write image

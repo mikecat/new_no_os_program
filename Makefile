@@ -24,26 +24,54 @@ TARGETS=$(TARGETS_NO_PAGING) $(TARGETS_PAGING)
 
 TARGETS_D=$(join $(addsuffix _d,$(basename $(TARGETS))),$(suffix $(TARGETS)))
 
+TARGETS_X64=$(join $(addsuffix _x64,$(basename $(TARGETS))),$(suffix $(TARGETS)))
+
+TARGETS_D_X64=$(join $(addsuffix _d_x64,$(basename $(TARGETS))),$(suffix $(TARGETS)))
+
+.PHONY: release-x86
+release-x86: $(TARGETS)
+
+.PHONY: release-x64
+release-x64: $(TARGETS_X64)
+
+.PHONY: debug-x86
+debug-x86: $(TARGETS_D)
+
+.PHONY: debug-x64
+debug-x64: $(TARGETS_D_X64)
+
 .PHONY: release
-release: $(TARGETS)
+release: release-x86 release-x64
 
 .PHONY: debug
-debug: $(TARGETS_D)
+debug: debug-x86 debug-x64
 
 .PHONY: all
 all: release debug
 
-%_d.img: %.c lib/libnnop_d.a
-	$(CC) -e $(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(addsuffix _d.img,$(basename $(TARGETS_NO_PAGING))))")),$(ENTRY_NO_PAGING) $(ENTRY_PAGING)) \
-		-Wl,--image-base=$(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(addsuffix _d.img,$(basename $(TARGETS_NO_PAGING))))")),$(IMAGE_BASE_NO_PAGING) $(IMAGE_BASE_PAGING)) \
-		$(CFLAGS_D) -o $*_d.exe $< -lnnop_d
-	./exe2img.pl $*_d.exe $@
+.PRECIOUS: %.exe %_d.exe %_x64.exe %.efi
 
-%.img: %.c lib/libnnop.a
-	$(CC) -e $(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(TARGETS_NO_PAGING))")),$(ENTRY_NO_PAGING) $(ENTRY_PAGING)) \
-		-Wl,--image-base=$(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(TARGETS_NO_PAGING))")),$(IMAGE_BASE_NO_PAGING) $(IMAGE_BASE_PAGING)) \
+%_x64.img: %_x64.efi
+	./file2img.pl $< $@ BOOTX64.EFI
+
+%.img: %.efi
+	./file2img.pl $< $@ BOOTIA32.EFI
+
+%.efi: %.exe
+	./exe2efi.pl $< $@
+
+%_x64.exe: %.exe
+	./exe_tox64.pl $< $@
+
+%_d.exe: %.c lib/libnnop_d.a
+	$(CC) -e $(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(addsuffix _d.exe,$(basename $(TARGETS_NO_PAGING))))")),$(ENTRY_NO_PAGING) $(ENTRY_PAGING)) \
+		-Wl,--image-base=$(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(addsuffix _d.exe,$(basename $(TARGETS_NO_PAGING))))")),$(IMAGE_BASE_NO_PAGING) $(IMAGE_BASE_PAGING)) \
+		$(CFLAGS_D) -o $*_d.exe $< -lnnop_d
+
+%.exe: %.c lib/libnnop.a
+	$(CC) -e $(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(addsuffix .exe,$(basename $(TARGETS_NO_PAGING))))")),$(ENTRY_NO_PAGING) $(ENTRY_PAGING)) \
+		-Wl,--image-base=$(word $(patsubst "%",1,$(subst "",2,"$(filter $@,$(addsuffix .exe,$(basename $(TARGETS_NO_PAGING))))")),$(IMAGE_BASE_NO_PAGING) $(IMAGE_BASE_PAGING)) \
 		$(CFLAGS) -o $*.exe $< -lnnop
-	./exe2img.pl $*.exe $@
 
 lib/libnnop_d.a:
 	make -C lib debug
