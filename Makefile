@@ -13,7 +13,7 @@ TARGETS_NO_PAGING= \
 	01_first.img \
 	03_serial.img \
 	04_tanken.img 04_tanken_2.img 04_tanken_mmap.img 04_tanken_mmap_2.img \
-	05_poweroff.img \
+	05_poweroff.img 08_x64_test.img \
 # --- END_OF_TARGETS ---
 
 TARGETS_PAGING= \
