@@ -18,6 +18,7 @@ void entry(void) {
 	unsigned int prev_result_addr = 0x100000 - 0x10000;
 	for (i = 0; i < 16; i++) prev_results[i] = -256;
 	__asm__ __volatile__("mov %%esp, %0\n\t" : "=g"(esp));
+	init_serial_direct();
 	end = (esp & 0xfff00000) + 0x100000;
 	for (start = 0x100000; start < end; start += 0x10000) {
 		int delta = 0;

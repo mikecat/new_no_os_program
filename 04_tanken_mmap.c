@@ -3,6 +3,7 @@
 void entry(void) {
 	unsigned int esp, end, start;
 	__asm__ __volatile__("mov %%esp, %0\n\t" : "=g"(esp));
+	init_serial_direct();
 	end = (esp & 0xfff00000) + 0x100000;
 	for (start = 0x500000; start < end; start += 4) {
 		unsigned int* data = (unsigned int*)start;

@@ -21,6 +21,7 @@ void entry(unsigned int dummy, unsigned int* first_table) {
 	int s5_length = 0, s5_limit = 0;
 	int in_data;
 
+	init_serial_direct();
 	printf_serial_direct("# elements of first table : %d\n", guid_num);
 	printf_serial_direct("first tabie : %p\n", (void*)guid_table);
 	for (i = 0; i < guid_num; i++) {
