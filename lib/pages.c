@@ -106,6 +106,7 @@ void initialize_pages(struct pusha_regs* regs) {
 	unsigned int physical_pages_laddr, physical_pages_refcount_laddr;
 
 	unsigned int* pde_physical;
+	unsigned int* next_pde;
 
 	int i;
 
@@ -207,24 +208,34 @@ void initialize_pages(struct pusha_regs* regs) {
 		}
 	}
 
-#if 0
-	/* メモリマップのavailableでない場所を読み取り専用でマップする */
+	/* 全体を4KBページングでマップするためのPDEを用意する */
+	next_pde = (unsigned int*)get_ppage();
+	for (i = 0; i < 0x300; i++) next_pde[i] = 0;
+	for (i = 0x300; i < 0x400; i++) next_pde[i] = pde_physical[i];
+
+	/* メモリマップに載っている0xc0000000以下の場所をマップする */
 	for (mmap_current = mmap; mmap_current != mmap_end; mmap_current = mmap_current->next) {
-		if (mmap_current->type != 7) {
-			unsigned int addr;
-			for (addr = mmap_current->start & ~0xfff; addr <= mmap_current->end && addr <= 0xc0000000u; addr += 0x1000) {
+		unsigned int addr;
+		for (addr = mmap_current->start & ~0xfff; addr <= mmap_current->end && addr <= 0xc0000000u; addr += 0x1000) {
+			if (mmap_current->type == 7) {
+				/* available */
+				map_first_pde(next_pde, addr, addr, 3);
+			} else {
+				/* available以外 */
 				acquire_ppage(addr);
-				map_first_pde(pde_physical, addr, addr, 1);
+				map_first_pde(next_pde, addr, addr, 1);
 			}
 		}
 	}
-#endif
 
 	/* スタックを確保する */
 	for (current_addr = stack_start; current_addr < 0xfffff000u; current_addr += 0x1000) {
 		unsigned int addr = get_ppage();
-		map_first_pde(pde_physical, current_addr, addr, 3);
+		map_first_pde(next_pde, current_addr, addr, 3);
 	}
+
+	/* 旧になるPDEを開放する */
+	release_ppage((unsigned int)pde_physical);
 
 	/* スタックを移動し、関数を実行する */
 	__asm__ __volatile__ (
@@ -234,5 +245,5 @@ void initialize_pages(struct pusha_regs* regs) {
 		"call _entry\n\t"
 		"1:\n\t"
 		"jmp 1b\n\t"
-	: : "r"(pde_physical), "r"(regs));
+	: : "r"(next_pde), "r"(regs));
 }
