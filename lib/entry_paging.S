@@ -1,8 +1,62 @@
 .text
 .globl _entry_paging
 _entry_paging:
-	# save original registers
-	pusha
+	# save original registers (format of PUSHA)
+	sub $32,%esp
+	mov %edi, (%esp)
+	mov %esi, 4(%esp)
+	mov %ebp, 8(%esp)
+	mov %ebx, 16(%esp)
+	mov %edx, 20(%esp)
+	mov %ecx, 24(%esp)
+	mov %eax, 28(%esp)
+	lea 32(%esp), %eax
+	mov %eax, 12(%esp)
+
+	# disable interrupts
+	cli
+	# check if cpuid exists
+	pushf
+	pop %eax # EFLAGS -> EAX
+	mov %eax, %edx
+	xor $0x00200000, %edx # toggle ID flag
+	push %edx
+	popf # EDX -> EFLAGS
+	pushf
+	pop %edx # EFLAGS -> EDX
+	xor %edx, %eax
+	test $0x00200000, %eax # ID flag in EAX (original) and EDX (toggled) differs?
+	jz no_cpuid # if they are same, no CPUID instruction
+	# check if MSR exists
+	mov $1, %eax
+	cpuid
+	test $0x20, %edx
+	jz no_msr
+	# check if information of long mode presence is available
+	mov $0x80000000, %eax
+	cpuid
+	cmp $0x80000001, %eax
+	jb no_long_mode_info
+	# check if long mode is available
+	mov $0x80000001, %eax
+	cpuid
+	test $0x20000000, %edx
+	jz no_long_mode
+	# disable paging (for disabling long mode)
+	mov %cr0, %eax
+	and $0x7fffffff, %eax
+	mov %eax, %cr0
+	# disable long mode
+	mov $0xc0000080, %ecx
+	rdmsr
+	and $0xfffffeff, %eax
+	wrmsr
+no_cpuid:
+no_msr:
+no_long_mode_info:
+no_long_mode:
+
+	# prepare to pass pointer to original registers as argument
 	mov %esp, %eax
 	# allocate aligned buffer for page table
 	sub $0x2000, %esp
@@ -31,7 +85,7 @@ no_offset:
 	# enable page size extension and disable physical address extension
 	mov %cr4, %eax
 	or $0x00000010, %eax
-	and $0xffffffbf, %eax
+	and $0xffffffdf, %eax
 	mov %eax, %cr4
 	# enable paging
 	mov %cr0, %eax

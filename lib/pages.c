@@ -6,6 +6,13 @@ struct mmap_entry {
 	unsigned int x3, type, x5, start, x7, end, x9, x10, x11, x12, x13;
 };
 
+struct mmap_entry_64 {
+	struct mmap_entry_64 *next;
+	unsigned int x3;
+	struct mmap_entry_64 *prev;
+	unsigned int x5, x6, type, start, x9, end, x11, x12, x13, x14, x15;
+};
+
 static int available_physical_pages;
 static unsigned int* physical_pages;
 static unsigned int* physical_pages_refcount;
@@ -69,6 +76,23 @@ static unsigned int search_mmap(unsigned int start, unsigned int end) {
 	return ret;
 }
 
+static unsigned int search_mmap_64(unsigned int start, unsigned int end) {
+	unsigned int i;
+	unsigned int ret = 0;
+	if (end < sizeof(struct mmap_entry_64) + 4) return 0;
+	for (i = start & ~3u; i <= end - sizeof(struct mmap_entry_64) - 4; i += 4) {
+		unsigned int* data = (unsigned int*)i;
+		if (data[0] == 0x70616d6du && data[8] == 0 && dist(i, data[2]) < 0x2000 && dist(i, data[4]) >= 0x2000) {
+			if (ret == 0) {
+				ret = i + 8;
+			} else {
+				return 0xffffffffu;
+			}
+		}
+	}
+	return ret;
+}
+
 static unsigned int read2(const unsigned char* pos) {
 	return pos[0] | (pos[1] << 8);
 }
@@ -95,9 +119,11 @@ static void map_first_pde(unsigned int* pde, unsigned int laddr, unsigned int pa
 void initialize_pages(struct pusha_regs* regs) {
 	unsigned int mmap_addr;
 	struct mmap_entry* mmap, *mmap_current, *mmap_end;
+	struct mmap_entry_64* mmap_64, *mmap_current_64, *mmap_end_64;
 
 	unsigned char* pe_header = (unsigned char*)0xc0000000;
 	unsigned int pe_new_header, pe_opt_header_size;
+	unsigned int pe_magic;
 	unsigned int pe_start, pe_image_size, pe_stack_size;
 	unsigned int stack_start;
 	unsigned int current_addr;
@@ -117,7 +143,14 @@ void initialize_pages(struct pusha_regs* regs) {
 	if (read4(pe_header + pe_new_header) != 0x4550) panic("PE header Signature mismatch");
 	pe_opt_header_size = read2(pe_header + pe_new_header + 0x14);
 	if (pe_opt_header_size < 0x78) panic("PE optional header too small");
-	pe_start = read4(pe_header + pe_new_header + 0x34);
+	pe_magic = read2(pe_header + pe_new_header + 0x18);
+	if (pe_magic == 0x010B) {
+		pe_start = read4(pe_header + pe_new_header + 0x34);
+	} else if (pe_magic == 0x020B) {
+		pe_start = read4(pe_header + pe_new_header + 0x30);
+	} else {
+		panic("PE magic unsupported");
+	}
 	pe_image_size = read4(pe_header + pe_new_header + 0x50);
 	pe_stack_size = read4(pe_header + pe_new_header + 0x60);
 	if (pe_start & 0xfff) panic("PE image not aligned");
@@ -126,12 +159,26 @@ void initialize_pages(struct pusha_regs* regs) {
 	if (pe_stack_size >= 0x10000000u) panic("PE stack too large");
 
 	/* メモリマップを探す */
-	mmap_addr = search_mmap(regs->esp & 0xfff00000u, (regs->esp & 0xfff00000u) + 0x100000);
-	if (mmap_addr == 0) panic("mmap not found");
+	mmap_addr = search_mmap(regs->esp & 0xffe00000u, (regs->esp & 0xffe00000u) + 0x200000);
 	if (mmap_addr == 0xffffffffu) panic("multiple mmap found");
-	mmap = (struct mmap_entry*)mmap_addr;
-	mmap_end = mmap->prev;
-	mmap_current = mmap;
+	if (mmap_addr == 0) {
+		mmap_addr = search_mmap_64(regs->esp & 0xffe00000u, (regs->esp & 0xffe00000u) + 0x200000);
+		if (mmap_addr == 0) panic("mmap(_64) not found");
+		if (mmap_addr == 0xffffffffu) panic("multiple mmap_64 found");
+		mmap = 0;
+		mmap_end = 0;
+		mmap_current = 0;
+		mmap_64 = (struct mmap_entry_64*)mmap_addr;
+		mmap_end_64 = mmap_64->prev;
+		mmap_current_64 = mmap_64;
+	} else {
+		mmap = (struct mmap_entry*)mmap_addr;
+		mmap_end = mmap->prev;
+		mmap_current = mmap;
+		mmap_64 = 0;
+		mmap_end_64 = 0;
+		mmap_current_64 = 0;
+	}
 
 	/* メモリマップからavailableの場所(プログラムの場所を除く)を一覧にする (作業用の最低限) */
 	physical_pages = physical_pages_temp;
@@ -140,12 +187,22 @@ void initialize_pages(struct pusha_regs* regs) {
 		if (pe_start <= current_addr && current_addr < pe_start + pe_image_size) {
 			current_addr = pe_start + ((pe_image_size + 0xfff) & ~0xfff);
 		}
-		while (mmap_current != mmap_end && (current_addr < mmap_current->start || mmap_current->end < current_addr)) {
-			mmap_current = mmap_current->next;
-		}
-		if (mmap_current == mmap_end) break;
-		if (mmap_current->type == 7) {
-			physical_pages[available_physical_pages++] = current_addr;
+		if (mmap != 0) {
+			while (mmap_current != mmap_end && (current_addr < mmap_current->start || mmap_current->end < current_addr)) {
+				mmap_current = mmap_current->next;
+			}
+			if (mmap_current == mmap_end) break;
+			if (mmap_current->type == 7) {
+				physical_pages[available_physical_pages++] = current_addr;
+			}
+		} else {
+			while (mmap_current_64 != mmap_end_64 && (current_addr < mmap_current_64->start || mmap_current_64->end < current_addr)) {
+				mmap_current_64 = mmap_current_64->next;
+			}
+			if (mmap_current_64 == mmap_end_64) break;
+			if (mmap_current_64->type == 7) {
+				physical_pages[available_physical_pages++] = current_addr;
+			}
 		}
 	}
 	physical_pages_temp_size = available_physical_pages;
@@ -199,12 +256,22 @@ void initialize_pages(struct pusha_regs* regs) {
 		if (pe_start <= current_addr && current_addr < pe_start + pe_image_size) {
 			current_addr = pe_start + ((pe_image_size + 0xfff) & ~0xfff);
 		}
-		while (mmap_current != mmap_end && (current_addr < mmap_current->start || mmap_current->end < current_addr)) {
-			mmap_current = mmap_current->next;
-		}
-		if (mmap_current == mmap_end) break;
-		if (mmap_current->type == 7) {
-			physical_pages[available_physical_pages++] = current_addr;
+		if (mmap != 0) {
+			while (mmap_current != mmap_end && (current_addr < mmap_current->start || mmap_current->end < current_addr)) {
+				mmap_current = mmap_current->next;
+			}
+			if (mmap_current == mmap_end) break;
+			if (mmap_current->type == 7) {
+				physical_pages[available_physical_pages++] = current_addr;
+			}
+		} else {
+			while (mmap_current_64 != mmap_end_64 && (current_addr < mmap_current_64->start || mmap_current_64->end < current_addr)) {
+				mmap_current_64 = mmap_current_64->next;
+			}
+			if (mmap_current_64 == mmap_end_64) break;
+			if (mmap_current_64->type == 7) {
+				physical_pages[available_physical_pages++] = current_addr;
+			}
 		}
 	}
 
@@ -214,16 +281,32 @@ void initialize_pages(struct pusha_regs* regs) {
 	for (i = 0x300; i < 0x400; i++) next_pde[i] = pde_physical[i];
 
 	/* メモリマップに載っている0xc0000000以下の場所をマップする */
-	for (mmap_current = mmap; mmap_current != mmap_end; mmap_current = mmap_current->next) {
-		unsigned int addr;
-		for (addr = mmap_current->start & ~0xfff; addr <= mmap_current->end && addr <= 0xc0000000u; addr += 0x1000) {
-			if (mmap_current->type == 7) {
-				/* available */
-				map_first_pde(next_pde, addr, addr, 3);
-			} else {
-				/* available以外 */
-				acquire_ppage(addr);
-				map_first_pde(next_pde, addr, addr, 1);
+	if (mmap != 0) {
+		for (mmap_current = mmap; mmap_current != mmap_end; mmap_current = mmap_current->next) {
+			unsigned int addr;
+			for (addr = mmap_current->start & ~0xfff; addr <= mmap_current->end && addr <= 0xc0000000u; addr += 0x1000) {
+				if (mmap_current->type == 7) {
+					/* available */
+					map_first_pde(next_pde, addr, addr, 3);
+				} else {
+					/* available以外 */
+					acquire_ppage(addr);
+					map_first_pde(next_pde, addr, addr, 1);
+				}
+			}
+		}
+	} else {
+		for (mmap_current_64 = mmap_64; mmap_current_64 != mmap_end_64; mmap_current_64 = mmap_current_64->next) {
+			unsigned int addr;
+			for (addr = mmap_current_64->start & ~0xfff; addr <= mmap_current_64->end && addr <= 0xc0000000u; addr += 0x1000) {
+				if (mmap_current_64->type == 7) {
+					/* available */
+					map_first_pde(next_pde, addr, addr, 3);
+				} else {
+					/* available以外 */
+					acquire_ppage(addr);
+					map_first_pde(next_pde, addr, addr, 1);
+				}
 			}
 		}
 	}
