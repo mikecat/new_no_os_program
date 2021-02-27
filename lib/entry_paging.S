@@ -46,6 +46,8 @@ _entry_paging:
 	mov %cr0, %eax
 	and $0x7fffffff, %eax
 	mov %eax, %cr0
+	jmp 1f # instruction set changed, flash pipeline?
+1:
 	# disable long mode
 	mov $0xc0000080, %ecx
 	rdmsr
