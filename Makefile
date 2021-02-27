@@ -1,6 +1,6 @@
 CC=gcc
-CFLAGS=-Ilib -Llib -nostdlib -Wall -Wextra -O2
-CFLAGS_D=-Llib -Ilib -nostdlib -Wall -Wextra -Og -g3
+CFLAGS=-Ilib -Llib -m32 -nostdlib -Wall -Wextra -O2
+CFLAGS_D=-Llib -Ilib -m32 -nostdlib -Wall -Wextra -Og -g3
 RM=rm -f
 
 ENTRY_NO_PAGING=_entry
