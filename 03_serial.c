@@ -1,7 +1,6 @@
 #include "serial_direct.h"
 
 void entry(void) {
-	int i;
 	init_serial_direct();
 	putchar_serial_direct('h');
 	putchar_serial_direct('e');

@@ -149,6 +149,7 @@ void initialize_pages(struct pusha_regs* regs) {
 	} else if (pe_magic == 0x020B) {
 		pe_start = read4(pe_header + pe_new_header + 0x30);
 	} else {
+		pe_start = 0;
 		panic("PE magic unsupported");
 	}
 	pe_image_size = read4(pe_header + pe_new_header + 0x50);
