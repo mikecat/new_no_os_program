@@ -13,11 +13,11 @@ TARGETS_NO_PAGING= \
 	01_first.img \
 	03_serial.img \
 	04_tanken.img 04_tanken_2.img 04_tanken_mmap.img 04_tanken_mmap_2.img \
-	05_poweroff.img 08_x64_test.img \
+	05_poweroff.img 08_x64_test.img 09_display_list.img 09_display.img \
 # --- END_OF_TARGETS ---
 
 TARGETS_PAGING= \
-	07_paging.img \
+	07_paging.img 09_display_print_gop.img \
 # --- END_OF_TARGETS ---
 
 TARGETS=$(TARGETS_NO_PAGING) $(TARGETS_PAGING)
