@@ -1,3 +1,5 @@
+#include "pages.h"
+#include "io_macro.h"
 #include "pusha_regs.h"
 #include "panic.h"
 
@@ -101,7 +103,7 @@ static unsigned int read4(const unsigned char* pos) {
 	return pos[0] | (pos[1] << 8) | (pos[2] << 16) | (pos[3] << 24);
 }
 
-static void map_first_pde(unsigned int* pde, unsigned int laddr, unsigned int paddr, int flags) {
+void map_pde(unsigned int* pde, unsigned int laddr, unsigned int paddr, int flags) {
 	unsigned int pde_index = (laddr >> 22) & 0x3ff;
 	unsigned int pte_index = (laddr >> 12) & 0x3ff;
 	unsigned int* pte;
@@ -109,11 +111,34 @@ static void map_first_pde(unsigned int* pde, unsigned int laddr, unsigned int pa
 	if (!(pde[pde_index] & 1)) {
 		pte = (unsigned int*)get_ppage();
 		for (i = 0; i < 1024; i++) pte[i] = 0;
-		pde[pde_index] = ((unsigned int)pte & ~0xfff) | 3;
+		pde[pde_index] = ((unsigned int)pte & ~0xfff) | (PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
 	} else {
 		pte = (unsigned int*)(pde[pde_index] & ~0xfff);
 	}
 	pte[pte_index] = (paddr & ~0xfff) | (flags & 0xfff);
+}
+
+unsigned int allocate_region(unsigned int* pde, unsigned int size) {
+	unsigned int ptr;
+	unsigned int i;
+	size = (size + 0xfff) & ~0xfff;
+	ptr = heap_address - size;
+	for (i = 0; i < size; i += 0x1000) {
+		unsigned int* buffer = (unsigned int*)get_ppage();
+		int j;
+		for (j = 0; j < 1024; j++) buffer[i] = 0;
+		map_pde(pde, ptr + i, (unsigned int)buffer, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
+	}
+	heap_address = ptr - 0x1000;
+	return ptr;
+}
+
+unsigned int allocate_region_without_allocation(unsigned int size) {
+	unsigned int ptr;
+	size = (size + 0xfff) & ~0xfff;
+	ptr = heap_address - size;
+	heap_address = ptr - 0x1000;
+	return ptr;
 }
 
 void initialize_pages(struct pusha_regs* regs) {
@@ -218,24 +243,15 @@ void initialize_pages(struct pusha_regs* regs) {
 
 	/* プログラムをマップする */
 	for (current_addr = pe_start; current_addr < pe_start + pe_image_size; current_addr += 0x1000) {
-		map_first_pde(pde_physical, current_addr - pe_start + 0xc0000000u, current_addr, 3);
+		map_pde(pde_physical, current_addr - pe_start + 0xc0000000u, current_addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
 	}
 
 	/* availableな場所一覧と参照カウント用のメモリを確保する */
-	physical_pages_laddr = heap_address - 0x400000;
-	physical_pages_refcount_laddr = physical_pages_laddr - 0x400000;
-	heap_address = physical_pages_refcount_laddr;
-	for (i = 0; i < 0x800000; i += 0x1000) {
-		unsigned int* buffer = (unsigned int*)get_ppage();
-		int j;
-		for (j = 0; j < 1024; j++) buffer[i] = 0;
-		map_first_pde(pde_physical, heap_address + i, (unsigned int)buffer, 3);
-	}
+	physical_pages_laddr = allocate_region(pde_physical, 0x400000);
+	physical_pages_refcount_laddr = allocate_region(pde_physical, 0x400000);
 
 	/* PDEを切り替える */
-	__asm__ __volatile (
-		"mov %0, %%cr3\n\t"
-	: : "r"(pde_physical));
+	set_cr3(pde_physical);
 
 	/* 確保した一覧の場所を設定する */
 	physical_pages = (unsigned int*)physical_pages_laddr;
@@ -288,11 +304,11 @@ void initialize_pages(struct pusha_regs* regs) {
 			for (addr = mmap_current->start & ~0xfff; addr <= mmap_current->end && addr <= 0xc0000000u; addr += 0x1000) {
 				if (mmap_current->type == 7) {
 					/* available */
-					map_first_pde(next_pde, addr, addr, 3);
+					map_pde(next_pde, addr, addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
 				} else {
 					/* available以外 */
 					acquire_ppage(addr);
-					map_first_pde(next_pde, addr, addr, 1);
+					map_pde(next_pde, addr, addr, PAGE_FLAG_PRESENT);
 				}
 			}
 		}
@@ -302,11 +318,11 @@ void initialize_pages(struct pusha_regs* regs) {
 			for (addr = mmap_current_64->start & ~0xfff; addr <= mmap_current_64->end && addr <= 0xc0000000u; addr += 0x1000) {
 				if (mmap_current_64->type == 7) {
 					/* available */
-					map_first_pde(next_pde, addr, addr, 3);
+					map_pde(next_pde, addr, addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
 				} else {
 					/* available以外 */
 					acquire_ppage(addr);
-					map_first_pde(next_pde, addr, addr, 1);
+					map_pde(next_pde, addr, addr, PAGE_FLAG_PRESENT);
 				}
 			}
 		}
@@ -315,7 +331,7 @@ void initialize_pages(struct pusha_regs* regs) {
 	/* スタックを確保する */
 	for (current_addr = stack_start; current_addr < 0xfffff000u; current_addr += 0x1000) {
 		unsigned int addr = get_ppage();
-		map_first_pde(next_pde, current_addr, addr, 3);
+		map_pde(next_pde, current_addr, addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
 	}
 
 	/* 旧になるPDEを開放する */
@@ -326,6 +342,9 @@ void initialize_pages(struct pusha_regs* regs) {
 		"mov %0, %%cr3\n\t"
 		"mov $0xffffee00, %%esp\n\t"
 		"mov %1, (%%esp)\n\t"
+		"push %1\n\t"
+		"call _library_initialize\n\t"
+		"pop %%eax\n\t"
 		"call _entry\n\t"
 		"1:\n\t"
 		"jmp 1b\n\t"

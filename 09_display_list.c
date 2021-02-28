@@ -33,8 +33,9 @@ static char gop_guid[] = {
 void entry(struct pusha_regs* regs) {
 	unsigned int* arg_table = (unsigned int*)((unsigned int*)regs->esp)[2];
 #else
-	void entry(int something, unsigned int* arg_table) {
+void entry(int something, unsigned int* arg_table) {
 	(void)something;
+	init_serial_direct();
 #endif
 	unsigned int* services = (unsigned int*)arg_table[15];
 	int (*LocateProtocol)(void*, void*, struct gop_main**) =
@@ -45,7 +46,6 @@ void entry(struct pusha_regs* regs) {
 	int i;
 	int res;
 
-	init_serial_direct();
 	res = LocateProtocol(gop_guid, 0, &gop);
 	if (res < 0) {
 		printf_serial_direct("LocateProtocol error 0x%08x\n", (unsigned int)res);

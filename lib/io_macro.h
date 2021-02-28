@@ -28,4 +28,10 @@
 #define out16(data, port) __asm__ __volatile__ \
 	("out %%ax, %%dx\n\t" : : "a"(data), "d"(port))
 
+#define get_cr3(data) __asm__ __volatile__ \
+	("mov %%cr3, %0\n\t" : "=r"(data))
+
+#define set_cr3(data) __asm__ __volatile__ \
+	("mov %0, %%cr3\n\t" : : "r"(data))
+
 #endif

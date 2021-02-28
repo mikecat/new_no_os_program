@@ -17,7 +17,7 @@ TARGETS_NO_PAGING= \
 # --- END_OF_TARGETS ---
 
 TARGETS_PAGING= \
-	07_paging.img 09_display_print_gop.img \
+	07_paging.img 09_display_print_gop.img 09_display_lib.img \
 # --- END_OF_TARGETS ---
 
 TARGETS=$(TARGETS_NO_PAGING) $(TARGETS_PAGING)

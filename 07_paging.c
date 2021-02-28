@@ -4,7 +4,6 @@
 void entry(struct pusha_regs* regs) {
 	unsigned int esp, eip;
 
-	init_serial_direct();
 	printf_serial_direct("initial registers:\n");
 	printf_serial_direct("EAX : 0x%08X\n", regs->eax);
 	printf_serial_direct("EBX : 0x%08X\n", regs->ebx);

@@ -15,7 +15,6 @@ void entry(struct pusha_regs* regs) {
 	int res;
 	int i;
 
-	init_serial_direct();
 	res = LocateProtocol(gop_guid, 0, &gop);
 	if (res < 0) {
 		printf_serial_direct("LocateProtocol error 0x%08x\n", (unsigned int)res);
