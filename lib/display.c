@@ -1,5 +1,5 @@
 #include "display.h"
-#include "pusha_regs.h"
+#include "regs.h"
 #include "io_macro.h"
 #include "pages.h"
 #include "serial_direct.h"
@@ -36,45 +36,50 @@ static char gop_guid[] = {
 	0x96,0xfb,0x7a,0xde,0xd0,0x80,0x51,0x6a
 };
 
-int initializeDisplayInfo(struct pusha_regs* regs) {
-	unsigned int* arg_table = (unsigned int*)((unsigned int*)regs->esp)[2];
-	unsigned int* services = (unsigned int*)arg_table[15];
-	int (*LocateProtocol)(void*, void*, struct gop_main**) =
-		(int (*)(void*, void*, struct gop_main**))services[6 + 37];
-	struct gop_main* gop = 0;
-	struct gop_info* info;
-	int infoSize;
-	int res;
-	unsigned int* pde;
-	unsigned int logicalVram;
-	unsigned int i;
-	initialized = 0;
-	res = LocateProtocol(gop_guid, 0, &gop);
-	if (res < 0) {
-		printf_serial_direct("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
+int initializeDisplayInfo(struct initial_regs* regs) {
+	if (!(regs->efer & 0x400)) { /* Long Mode not enabled at first */
+		unsigned int* arg_table = (unsigned int*)((unsigned int*)regs->iregs.esp)[2];
+		unsigned int* services = (unsigned int*)arg_table[15];
+		int (*LocateProtocol)(void*, void*, struct gop_main**) =
+			(int (*)(void*, void*, struct gop_main**))services[6 + 37];
+		struct gop_main* gop = 0;
+		struct gop_info* info;
+		int infoSize;
+		int res;
+		unsigned int* pde;
+		unsigned int logicalVram;
+		unsigned int i;
+		initialized = 0;
+		res = LocateProtocol(gop_guid, 0, &gop);
+		if (res < 0) {
+			printf_serial_direct("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
+			return 0;
+		}
+		res = gop->QueryMode(gop, gop->Mode == 0 ? 0 : gop->Mode->Mode, &infoSize, &info);
+		if (res < 0) {
+			printf_serial_direct("display: QueryMode error 0x%08x\n", (unsigned int)res);
+			return 0;
+		}
+
+		get_cr3(pde);
+		logicalVram = allocate_region_without_allocation(gop->Mode->vramSize);
+		for (i = 0; i < gop->Mode->vramSize; i += 0x1000) {
+			map_pde(pde, logicalVram + i, (unsigned int)gop->Mode->vram + i,
+				PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_CACHE_DISABLE);
+		}
+
+		displayInfo.vram = (void*)logicalVram;
+		displayInfo.vramSize = gop->Mode->vramSize;
+		displayInfo.width = gop->Mode->info->Width;
+		displayInfo.height = gop->Mode->info->Height;
+		displayInfo.pixelFormat = gop->Mode->info->PixelFormat;
+		displayInfo.pixelPerScanLine = gop->Mode->info->PixelPerScanLine;
+		initialized = 1;
+		return 1;
+	} else {
+		printf_serial_direct("display: not implemented in x64\n");
 		return 0;
 	}
-	res = gop->QueryMode(gop, gop->Mode == 0 ? 0 : gop->Mode->Mode, &infoSize, &info);
-	if (res < 0) {
-		printf_serial_direct("display:QueryMode error 0x%08x\n", (unsigned int)res);
-		return 0;
-	}
-
-	get_cr3(pde);
-	logicalVram = allocate_region_without_allocation(gop->Mode->vramSize);
-	for (i = 0; i < gop->Mode->vramSize; i += 0x1000) {
-		map_pde(pde, logicalVram + i, (unsigned int)gop->Mode->vram + i,
-			PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_CACHE_DISABLE);
-	}
-
-	displayInfo.vram = (void*)logicalVram;
-	displayInfo.vramSize = gop->Mode->vramSize;
-	displayInfo.width = gop->Mode->info->Width;
-	displayInfo.height = gop->Mode->info->Height;
-	displayInfo.pixelFormat = gop->Mode->info->PixelFormat;
-	displayInfo.pixelPerScanLine = gop->Mode->info->PixelPerScanLine;
-	initialized = 1;
-	return 1;
 }
 
 const struct display_info* getDisplayInfo(void) {

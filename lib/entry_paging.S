@@ -2,7 +2,7 @@
 .globl _entry_paging
 _entry_paging:
 	# save original registers (format of PUSHA)
-	sub $32,%esp
+	sub $48,%esp
 	mov %edi, (%esp)
 	mov %esi, 4(%esp)
 	mov %ebp, 8(%esp)
@@ -10,8 +10,16 @@ _entry_paging:
 	mov %edx, 20(%esp)
 	mov %ecx, 24(%esp)
 	mov %eax, 28(%esp)
-	lea 32(%esp), %eax
+	lea 48(%esp), %eax
 	mov %eax, 12(%esp)
+	mov %cr0, %eax
+	mov %eax, 32(%esp)
+	mov %cr3, %eax
+	mov %eax, 36(%esp)
+	mov %cr4, %eax
+	mov %eax, 40(%esp)
+	xor %eax, %eax
+	mov %eax, 44(%esp) # placeholder for MSR (EFER)
 
 	# disable interrupts
 	cli
@@ -32,6 +40,10 @@ _entry_paging:
 	cpuid
 	test $0x20, %edx
 	jz no_msr
+	# save MSR (EFER) if it exists
+	mov $0xc0000080, %ecx
+	rdmsr
+	mov %eax, 44(%esp)
 	# check if information of long mode presence is available
 	mov $0x80000000, %eax
 	cpuid

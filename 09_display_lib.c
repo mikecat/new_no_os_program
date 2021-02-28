@@ -1,8 +1,8 @@
-#include "pusha_regs.h"
+#include "regs.h"
 #include "serial_direct.h"
 #include "display.h"
 
-void entry(struct pusha_regs* regs) {
+void entry(struct initial_regs* regs) {
 	const struct display_info* display = getDisplayInfo();
 	int y, x;
 	(void)regs;

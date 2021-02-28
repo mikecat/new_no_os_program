@@ -5,4 +5,9 @@ struct pusha_regs {
 	unsigned int edi, esi, ebp, esp, ebx, edx, ecx, eax;
 };
 
+struct initial_regs {
+	struct pusha_regs iregs;
+	unsigned int cr0, cr3, cr4, efer;
+};
+
 #endif

@@ -1,4 +1,4 @@
-#include "pusha_regs.h"
+#include "regs.h"
 #include "serial_direct.h"
 
 struct gop_info {
@@ -30,8 +30,8 @@ static char gop_guid[] = {
 };
 
 #if 0
-void entry(struct pusha_regs* regs) {
-	unsigned int* arg_table = (unsigned int*)((unsigned int*)regs->esp)[2];
+void entry(struct initial_regs* regs) {
+	unsigned int* arg_table = (unsigned int*)((unsigned int*)regs->iregs.esp)[2];
 #else
 void entry(int something, unsigned int* arg_table) {
 	(void)something;
