@@ -20,6 +20,14 @@ static unsigned int* physical_pages;
 static unsigned int* physical_pages_refcount;
 static unsigned int physical_pages_temp[4096];
 
+void* getTempBuffer(void) {
+	return physical_pages_temp;
+}
+
+unsigned int getTempBufferSize(void) {
+	return sizeof(physical_pages_temp);
+}
+
 static unsigned int heap_address;
 
 unsigned int acquire_ppage(unsigned int ppage) {

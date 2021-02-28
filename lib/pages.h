@@ -10,6 +10,11 @@
 #define PAGE_FLAG_DIRTY 0x040
 #define PAGE_FLAG_GLOBAL 0x100
 
+/* 初期化時だけ使ったバッファのアドレスを返す */
+void* getTempBuffer(void);
+/* 初期化時だけ使ったバッファのサイズを返す */
+unsigned int getTempBufferSize(void);
+
 /* 物理ページの参照カウントを増やす */
 unsigned int acquire_ppage(unsigned int ppage);
 /* 物理ページの参照カウントを減らす */
