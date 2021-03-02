@@ -40,18 +40,16 @@ _call_x64_uefi:
 	mov eax, cr0
 	or eax, 0x80000000
 	mov cr0, eax
-	jmp long_mode_enabled
-long_mode_enabled:
 	; restore GDTR and IDTR to the original value
 	mov ecx, [ebp + 8]
 	lgdt [ecx + 48]
 	lidt [ecx + 60]
 	; enter 64-bit mode
-	mov dword [ebp - 48], (long_mode_enabled_2-0xc0000000+0x00400000)
+	mov dword [ebp - 48], (long_mode_enabled-0xc0000000+0x00400000)
 	mov ax, [ecx + 72]
 	mov [ebp - 44], ax
 	jmp far dword [ebp - 48]
-long_mode_enabled_2:
+long_mode_enabled:
 bits 64
 	; set segments to the original value
 	mov ax, [ecx + 74]
@@ -83,9 +81,9 @@ no_8:
 	lidt [ebp - 28]
 	; switch CS (exit 64-bit mode)
 	push 0x08
-	push (long_mode_enabled_3-0xc0000000+0x00400000)
+	push (long_mode_enabled_2-0xc0000000+0x00400000)
 	db 0x48, 0xcb ; 64-bit retf
-long_mode_enabled_3:
+long_mode_enabled_2:
 	; restore segments
 	mov ax, 0x10
 	mov ds, ax
