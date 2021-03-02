@@ -134,7 +134,7 @@ unsigned int allocate_region(unsigned int* pde, unsigned int size) {
 	for (i = 0; i < size; i += 0x1000) {
 		unsigned int* buffer = (unsigned int*)get_ppage();
 		int j;
-		for (j = 0; j < 1024; j++) buffer[i] = 0;
+		for (j = 0; j < 1024; j++) buffer[j] = 0;
 		map_pde(pde, ptr + i, (unsigned int)buffer, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
 	}
 	heap_address = ptr - 0x1000;
