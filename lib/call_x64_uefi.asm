@@ -7,7 +7,7 @@ _call_x64_uefi:
 	; prorogue
 	push ebp
 	mov ebp, esp
-	sub esp, 48
+	sub esp, 16 + 16 + 16 + 32 ; space for backing up registers + 32 bytes for calling convension
 	and esp, 0xfffffff0
 	; disable paging
 	mov eax, cr0
@@ -16,6 +16,13 @@ _call_x64_uefi:
 	; backup CR3
 	mov eax, cr3
 	mov [ebp - 4], eax
+	; backup GDT and IDT
+	mov dword [ebp - 12], 0
+	mov dword [ebp - 8], 0
+	sgdt [ebp - 16]
+	mov dword [ebp - 24], 0
+	mov dword [ebp - 20], 0
+	sidt [ebp - 28]
 	; set CR3 to the original value
 	mov eax, [ebp + 8]
 	mov eax, [eax + 36]
@@ -35,13 +42,28 @@ _call_x64_uefi:
 	mov cr0, eax
 	jmp long_mode_enabled
 long_mode_enabled:
+	; restore GDTR and IDTR to the original value
+	mov ecx, [ebp + 8]
+	lgdt [ecx + 48]
+	lidt [ecx + 60]
 	; enter 64-bit mode
-	mov dword [ebp - 16], (long_mode_enabled_2-0xc0000000+0x00400000)
-	mov ax, cs
-	mov [ebp - 12], ax
-	jmp far dword [ebp - 16]
+	mov dword [ebp - 48], (long_mode_enabled_2-0xc0000000+0x00400000)
+	mov ax, [ecx + 72]
+	mov [ebp - 44], ax
+	jmp far dword [ebp - 48]
 long_mode_enabled_2:
 bits 64
+	; set segments to the original value
+	mov ax, [ecx + 74]
+	mov ds, ax
+	mov ax, [ecx + 76]
+	mov ss, ax
+	mov ax, [ecx + 78]
+	mov es, ax
+	mov ax, [ecx + 80]
+	mov fs, ax
+	mov ax, [ecx + 82]
+	mov gs, ax
 	; set up arguments
 	mov ecx, [rbp + 16]
 	mov edx, [rbp + 20]
@@ -56,6 +78,21 @@ bits 64
 	jns no_8
 	or eax, 0x80000000
 no_8:
+	; restore GDT and IDT
+	lgdt [ebp - 16]
+	lidt [ebp - 28]
+	; switch CS (exit 64-bit mode)
+	push 0x08
+	push (long_mode_enabled_3-0xc0000000+0x00400000)
+	db 0x48, 0xcb ; 64-bit retf
+long_mode_enabled_3:
+	; restore segments
+	mov ax, 0x10
+	mov ds, ax
+	mov ss, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
 	; disable paging (exit Long Mode)
 	mov rcx, cr0
 	and ecx, 0x7fffffff

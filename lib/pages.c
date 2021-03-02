@@ -3,6 +3,15 @@
 #include "regs.h"
 #include "panic.h"
 
+unsigned int gdt[] = {
+	0, 0,
+	0x0000ffffu, 0x00cf9a00u, /* 0x08 ring 0 code segment */
+	0x0000ffffu, 0x00cf9200u, /* 0x10 ring 0 data segment */
+	0x0000ffffu, 0x00cffa00u, /* 0x08 ring 3 code segment */
+	0x0000ffffu, 0x00cff200u, /* 0x10 ring 3 data segment */
+	0x0000ffffu, 0x00af9a00u  /* 0x18 ring 0 Long Mode code segment */
+};
+
 struct mmap_entry {
 	struct mmap_entry *next, *prev;
 	unsigned int x3, type, x5, start, x7, end, x9, x10, x11, x12, x13;
@@ -193,10 +202,10 @@ void initialize_pages(struct initial_regs* regs) {
 	if (pe_stack_size >= 0x10000000u) panic("PE stack too large");
 
 	/* メモリマップを探す */
-	mmap_addr = search_mmap(regs->iregs.esp & 0xffe00000u, (regs->iregs.esp & 0xffe00000u) + 0x200000);
+	mmap_addr = search_mmap(regs->iregs.esp & 0xfe000000u, (regs->iregs.esp & 0xfe000000u) + 0x2000000);
 	if (mmap_addr == 0xffffffffu) panic("multiple mmap found");
 	if (mmap_addr == 0) {
-		mmap_addr = search_mmap_64(regs->iregs.esp & 0xffe00000u, (regs->iregs.esp & 0xffe00000u) + 0x200000);
+		mmap_addr = search_mmap_64(regs->iregs.esp & 0xfe000000u, (regs->iregs.esp & 0xfe000000u) + 0x2000000);
 		if (mmap_addr == 0) panic("mmap(_64) not found");
 		if (mmap_addr == 0xffffffffu) panic("multiple mmap_64 found");
 		mmap = 0;
@@ -334,6 +343,11 @@ void initialize_pages(struct initial_regs* regs) {
 				}
 			}
 		}
+	}
+
+	/* プログラムをマップする (書き込みを許可) */
+	for (current_addr = pe_start; current_addr < pe_start + pe_image_size; current_addr += 0x1000) {
+		map_pde(next_pde, current_addr, current_addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
 	}
 
 	/* スタックを確保する */

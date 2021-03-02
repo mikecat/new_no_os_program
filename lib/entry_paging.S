@@ -2,7 +2,7 @@
 .globl _entry_paging
 _entry_paging:
 	# save original registers (format of PUSHA)
-	sub $48,%esp
+	sub $88,%esp
 	mov %edi, (%esp)
 	mov %esi, 4(%esp)
 	mov %ebp, 8(%esp)
@@ -10,7 +10,7 @@ _entry_paging:
 	mov %edx, 20(%esp)
 	mov %ecx, 24(%esp)
 	mov %eax, 28(%esp)
-	lea 48(%esp), %eax
+	lea 88(%esp), %eax
 	mov %eax, 12(%esp)
 	mov %cr0, %eax
 	mov %eax, 32(%esp)
@@ -20,9 +20,55 @@ _entry_paging:
 	mov %eax, 40(%esp)
 	xor %eax, %eax
 	mov %eax, 44(%esp) # placeholder for MSR (EFER)
+	mov %eax, 52(%esp) # initialize part of GDTR
+	mov %eax, 56(%esp)
+	mov %eax, 64(%esp) # initialize part o IDTR
+	mov %eax, 68(%esp)
+	sgdt 48(%esp)
+	sidt 60(%esp)
+	mov %cs, %ax
+	mov %ax, 72(%esp)
+	mov %ds, %ax
+	mov %ax, 74(%esp)
+	mov %ss, %ax
+	mov %ax, 76(%esp)
+	mov %es, %ax
+	mov %ax, 78(%esp)
+	mov %fs, %ax
+	mov %ax, 80(%esp)
+	mov %gs, %ax
+	mov %ax, 82(%esp)
 
 	# disable interrupts
 	cli
+
+	# initialize GDT
+	sub $16, %esp # allocate space for LGDT
+	mov $0xbfc00000, %ecx # 0xc0000000 - 0x00400000
+	mov $_gdt, %eax
+	sub %ecx, %eax
+	movl %eax, 4(%esp)
+	movl $0, 8(%esp)
+	movw $47, 2(%esp) # size of GDT minus one
+	lea 2(%esp), %eax
+	# switch to new CS
+	push $0x08
+	mov $switch_to_new_cs, %edx
+	sub %ecx, %edx
+	push %edx
+	lgdt (%eax)
+	dec %eax # magic : make RETF 64-bit in Long Mode
+	retf
+switch_to_new_cs:
+	# switch to new segments
+	mov $0x10, %ax
+	mov %ax, %ds
+	mov %ax, %ss
+	mov %ax, %es
+	mov %ax, %fs
+	mov %ax, %gs
+	add $16, %esp # de-allocate space for LGDT
+
 	# check if cpuid exists
 	pushf
 	pop %eax # EFLAGS -> EAX

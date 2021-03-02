@@ -120,6 +120,29 @@ int initializeDisplayInfo(struct initial_regs* regs) {
 		unsigned int logicalVram;
 		unsigned int i;
 		int res;
+		unsigned int gdt_bak[2], idt_bak[2];
+		__asm__ __volatile__ (
+			"sgdt (%1)\n\t"
+			"sidt (%2)\n\t"
+			"lgdt 48(%0)\n\t"
+			"lidt 60(%0)\n\t"
+			"xor %%eax, %%eax\n\t"
+			"mov 72(%0), %%ax\n\t"
+			"push %%eax\n\t"
+			"push $initialize_display_farjmp1\n\t"
+			"retf\n\t"
+			"initialize_display_farjmp1:\n\t"
+			"mov 74(%0), %%ax\n\t"
+			"mov %%ax, %%ds\n\t"
+			"mov 76(%0), %%ax\n\t"
+			"mov %%ax, %%ss\n\t"
+			"mov 78(%0), %%ax\n\t"
+			"mov %%ax, %%es\n\t"
+			"mov 80(%0), %%ax\n\t"
+			"mov %%ax, %%fs\n\t"
+			"mov 82(%0), %%ax\n\t"
+			"mov %%ax, %%gs\n\t"
+		: : "r"(regs), "r"(gdt_bak), "r"(idt_bak) : "%eax");
 		res = LocateProtocol(gop_guid, 0, &gop);
 		if (res < 0) {
 			printf_serial_direct("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
@@ -130,6 +153,19 @@ int initializeDisplayInfo(struct initial_regs* regs) {
 			printf_serial_direct("display: QueryMode error 0x%08x\n", (unsigned int)res);
 			return 0;
 		}
+		__asm__ __volatile__ (
+			"cli\n\t"
+			"lgdt (%1)\n\t"
+			"lidt (%2)\n\t"
+			"jmp $0x08, $initialize_display_farjmp2\n\t"
+			"initialize_display_farjmp2:\n\t"
+			"mov $0x10, %%ax\n\t"
+			"mov %%ax, %%ds\n\t"
+			"mov %%ax, %%ss\n\t"
+			"mov %%ax, %%es\n\t"
+			"mov %%ax, %%fs\n\t"
+			"mov %%ax, %%gs\n\t"
+		: : "r"(regs), "r"(gdt_bak), "r"(idt_bak) : "%eax");
 
 		get_cr3(pde);
 		logicalVram = allocate_region_without_allocation(gop->Mode->vramSize);

@@ -8,6 +8,9 @@ struct pusha_regs {
 struct initial_regs {
 	struct pusha_regs iregs;
 	unsigned int cr0, cr3, cr4, efer;
+	unsigned int gdtr[3];
+	unsigned int idtr[3];
+	unsigned short cs, ds, ss, es, fs, gs;
 };
 
 #endif
