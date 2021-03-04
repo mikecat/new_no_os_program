@@ -3,6 +3,7 @@
 #include "io_macro.h"
 #include "pages.h"
 #include "serial_direct.h"
+#include "call_uefi.h"
 
 static struct display_info displayInfo;
 
@@ -59,113 +60,34 @@ static char gop_guid[] = {
 
 #define ADDR_OFFSET (0x00400000u - 0xC0000000u)
 
-typedef int (*call_x64_uefi_type)(struct initial_regs* regs, void* function, void* arg1, int arg2, void* arg3, void* arg4);
-extern call_x64_uefi_type call_x64_uefi;
-
-int initializeDisplayInfo_x64(struct initial_regs* regs) {
-	unsigned int* arg_table = (unsigned int*)regs->iregs.edx;
-	unsigned int* services = (unsigned int*)arg_table[24];
-	void* LocateProtocol = (void*)services[6 + 2 * 37];
-	call_x64_uefi_type call_x64_uefi_adjusted =
-		(call_x64_uefi_type)((unsigned int)&call_x64_uefi + ADDR_OFFSET);
-	struct gop_main_64* gops[2] = {0}, *gop;
-	struct gop_info* info[2];
-	int infoSize[2];
-	unsigned int* pde;
-	unsigned int logicalVram;
-	unsigned int i;
-	int res;
-	res = call_x64_uefi_adjusted(regs, LocateProtocol,
-		(void*)((unsigned int)gop_guid + ADDR_OFFSET), 0, &gops[0], 0);
-	if (res < 0) {
-		printf_serial_direct("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
-		return 0;
-	}
-	gop = gops[0];
-	res = call_x64_uefi_adjusted(regs, gop->QueryMode,
-		gop, gop->Mode == 0 ? 0 : gop->Mode->Mode, &infoSize[0], &info[0]);
-	if (res < 0) {
-		printf_serial_direct("display: QueryMode error 0x%08x\n", (unsigned int)res);
-		return 0;
-	}
-
-	get_cr3(pde);
-	logicalVram = allocate_region_without_allocation(gop->Mode->vramSize);
-	for (i = 0; i < gop->Mode->vramSize; i += 0x1000) {
-		map_pde(pde, logicalVram + i, (unsigned int)gop->Mode->vram + i,
-			PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_CACHE_DISABLE);
-	}
-
-	displayInfo.vram = (void*)logicalVram;
-	displayInfo.vramSize = gop->Mode->vramSize;
-	displayInfo.width = gop->Mode->info->Width;
-	displayInfo.height = gop->Mode->info->Height;
-	displayInfo.pixelFormat = gop->Mode->info->PixelFormat;
-	displayInfo.pixelPerScanLine = gop->Mode->info->PixelPerScanLine;
-	initialized = 1;
-	return 1;
-}
-
-int initializeDisplayInfo(struct initial_regs* regs) {
-	initialized = 0;
-	if (!(regs->efer & 0x400)) { /* Long Mode not enabled at first */
-		unsigned int* arg_table = (unsigned int*)((unsigned int*)regs->iregs.esp)[2];
-		unsigned int* services = (unsigned int*)arg_table[15];
-		int (*LocateProtocol)(void*, void*, struct gop_main**) =
-			(int (*)(void*, void*, struct gop_main**))services[6 + 37];
-		struct gop_main* gop = 0;
-		struct gop_info* info;
-		int infoSize;
+static int initializeDisplayInfo_ident(void* data) {
+	struct initial_regs* regs = data;
+	if (regs->efer & 0x400) {
+		/* Long Mode */
+		unsigned int* arg_table = (unsigned int*)regs->iregs.edx;
+		unsigned int* services = (unsigned int*)arg_table[24];
+		void* LocateProtocol = (void*)services[6 + 2 * 37];
+		struct gop_main_64* gops[2] = {0}, *gop;
+		struct gop_info* info[2];
+		int infoSize[2];
 		unsigned int* pde;
 		unsigned int logicalVram;
 		unsigned int i;
 		int res;
-		unsigned int gdt_bak[2], idt_bak[2];
-		__asm__ __volatile__ (
-			"sgdt (%1)\n\t"
-			"sidt (%2)\n\t"
-			"lgdt 48(%0)\n\t"
-			"lidt 60(%0)\n\t"
-			"xor %%eax, %%eax\n\t"
-			"mov 72(%0), %%ax\n\t"
-			"push %%eax\n\t"
-			"push $initialize_display_farjmp1\n\t"
-			"retf\n\t"
-			"initialize_display_farjmp1:\n\t"
-			"mov 74(%0), %%ax\n\t"
-			"mov %%ax, %%ds\n\t"
-			"mov 76(%0), %%ax\n\t"
-			"mov %%ax, %%ss\n\t"
-			"mov 78(%0), %%ax\n\t"
-			"mov %%ax, %%es\n\t"
-			"mov 80(%0), %%ax\n\t"
-			"mov %%ax, %%fs\n\t"
-			"mov 82(%0), %%ax\n\t"
-			"mov %%ax, %%gs\n\t"
-		: : "r"(regs), "r"(gdt_bak), "r"(idt_bak) : "%eax");
-		res = LocateProtocol(gop_guid, 0, &gop);
+		res = call_uefi(regs, LocateProtocol,
+			(unsigned int)gop_guid + ADDR_OFFSET, 0, (unsigned int)&gops[0], 0, 0);
 		if (res < 0) {
 			printf_serial_direct("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
 			return 0;
 		}
-		res = gop->QueryMode(gop, gop->Mode == 0 ? 0 : gop->Mode->Mode, &infoSize, &info);
+		gop = gops[0];
+		res = call_uefi(regs, gop->QueryMode,
+			(unsigned int)gop, (unsigned int)(gop->Mode == 0 ? 0 : gop->Mode->Mode),
+			(unsigned int)&infoSize[0], (unsigned int)&info[0], 0);
 		if (res < 0) {
 			printf_serial_direct("display: QueryMode error 0x%08x\n", (unsigned int)res);
 			return 0;
 		}
-		__asm__ __volatile__ (
-			"cli\n\t"
-			"lgdt (%1)\n\t"
-			"lidt (%2)\n\t"
-			"jmp $0x08, $initialize_display_farjmp2\n\t"
-			"initialize_display_farjmp2:\n\t"
-			"mov $0x10, %%ax\n\t"
-			"mov %%ax, %%ds\n\t"
-			"mov %%ax, %%ss\n\t"
-			"mov %%ax, %%es\n\t"
-			"mov %%ax, %%fs\n\t"
-			"mov %%ax, %%gs\n\t"
-		: : "r"(regs), "r"(gdt_bak), "r"(idt_bak) : "%eax");
 
 		get_cr3(pde);
 		logicalVram = allocate_region_without_allocation(gop->Mode->vramSize);
@@ -180,25 +102,51 @@ int initializeDisplayInfo(struct initial_regs* regs) {
 		displayInfo.height = gop->Mode->info->Height;
 		displayInfo.pixelFormat = gop->Mode->info->PixelFormat;
 		displayInfo.pixelPerScanLine = gop->Mode->info->PixelPerScanLine;
-		initialized = 1;
 	} else {
-		/* スタックを切り替え、処理を実行する */
-		void* newStack = (void*)((unsigned int)getTempBuffer() + ADDR_OFFSET);
+		unsigned int* arg_table = (unsigned int*)((unsigned int*)regs->iregs.esp)[2];
+		unsigned int* services = (unsigned int*)arg_table[15];
+		void* LocateProtocol = (void*)services[6 + 37];
+		struct gop_main* gop = 0;
+		struct gop_info* info;
+		int infoSize;
+		unsigned int* pde;
+		unsigned int logicalVram;
+		unsigned int i;
 		int res;
-		__asm__ __volatile__ (
-			"push %%ebp\n\t"
-			"mov %%esp, %%ebp\n\t"
-			"mov %1, %%esp\n\t"
-			"and $0xfffffff0, %%esp\n\t"
-			"mov %2, (%%esp)\n\t"
-			"call _initializeDisplayInfo_x64\n\t"
-			"mov %%eax, %0\n\t"
-			"leave\n\t" /* mov %%ebp, %%esp; pop %%ebp */
-		: "=r"(res) : "r"((char*)newStack + getTempBufferSize() - 4), "r"(regs)
-		: "%eax", "%ecx", "%edx");
-		if (!res) return 0;
+		res = call_uefi(regs, LocateProtocol,
+			(unsigned int)gop_guid + ADDR_OFFSET, 0, (unsigned int)&gop, 0, 0);
+		if (res < 0) {
+			printf_serial_direct("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
+			return 0;
+		}
+		res = call_uefi(regs, gop->QueryMode,
+			(unsigned int)gop, (unsigned int)(gop->Mode == 0 ? 0 : gop->Mode->Mode),
+			(unsigned int)&infoSize, (unsigned int)&info, 0);
+		if (res < 0) {
+			printf_serial_direct("display: QueryMode error 0x%08x\n", (unsigned int)res);
+			return 0;
+		}
+
+		get_cr3(pde);
+		logicalVram = allocate_region_without_allocation(gop->Mode->vramSize);
+		for (i = 0; i < gop->Mode->vramSize; i += 0x1000) {
+			map_pde(pde, logicalVram + i, (unsigned int)gop->Mode->vram + i,
+				PAGE_FLAG_PRESENT | PAGE_FLAG_WRITE | PAGE_FLAG_CACHE_DISABLE);
+		}
+
+		displayInfo.vram = (void*)logicalVram;
+		displayInfo.vramSize = gop->Mode->vramSize;
+		displayInfo.width = gop->Mode->info->Width;
+		displayInfo.height = gop->Mode->info->Height;
+		displayInfo.pixelFormat = gop->Mode->info->PixelFormat;
+		displayInfo.pixelPerScanLine = gop->Mode->info->PixelPerScanLine;
 	}
 	return 1;
+}
+
+int initializeDisplayInfo(struct initial_regs* regs) {
+	initialized = callWithIdentStack(initializeDisplayInfo_ident, regs);
+	return initialized;
 }
 
 const struct display_info* getDisplayInfo(void) {
