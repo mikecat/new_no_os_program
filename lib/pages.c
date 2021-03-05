@@ -2,6 +2,7 @@
 #include "io_macro.h"
 #include "regs.h"
 #include "panic.h"
+#include "call_uefi.h"
 
 unsigned int gdt[] = {
 	0, 0,
@@ -12,17 +13,16 @@ unsigned int gdt[] = {
 	0x0000ffffu, 0x00af9a00u  /* 0x18 ring 0 Long Mode code segment */
 };
 
-struct mmap_entry {
-	struct mmap_entry *next, *prev;
-	unsigned int x3, type, x5, start, x7, end, x9, x10, x11, x12, x13;
+struct mmap_element {
+	unsigned int type;
+	unsigned int space;
+	unsigned int start[2];
+	unsigned int virtualAddress[2];
+	unsigned int numPages[2];
+	unsigned int attribute[2];
 };
 
-struct mmap_entry_64 {
-	struct mmap_entry_64 *next;
-	unsigned int x3;
-	struct mmap_entry_64 *prev;
-	unsigned int x5, x6, type, start, x9, end, x11, x12, x13, x14, x15;
-};
+static char memory_map[4096 * 4];
 
 static int available_physical_pages;
 static unsigned int* physical_pages;
@@ -67,44 +67,6 @@ unsigned int get_ppage(void) {
 	}
 	if (available_physical_pages == 0) panic("no physical pages available");
 	return acquire_ppage(physical_pages[--available_physical_pages]);
-}
-
-static unsigned int dist(unsigned int a, unsigned int b) {
-	return a < b ? b - a : a - b;
-}
-
-static unsigned int search_mmap(unsigned int start, unsigned int end) {
-	unsigned int i;
-	unsigned int ret = 0;
-	if (end < sizeof(struct mmap_entry) + 4) return 0;
-	for (i = start & ~3u; i <= end - sizeof(struct mmap_entry) - 4; i += 4) {
-		unsigned int* data = (unsigned int*)i;
-		if (data[0] == 0x70616d6du && data[6] == 0 && dist(i, data[1]) < 0x2000 && dist(i, data[2]) >= 0x2000) {
-			if (ret == 0) {
-				ret = i + 4;
-			} else {
-				return 0xffffffffu;
-			}
-		}
-	}
-	return ret;
-}
-
-static unsigned int search_mmap_64(unsigned int start, unsigned int end) {
-	unsigned int i;
-	unsigned int ret = 0;
-	if (end < sizeof(struct mmap_entry_64) + 4) return 0;
-	for (i = start & ~3u; i <= end - sizeof(struct mmap_entry_64) - 4; i += 4) {
-		unsigned int* data = (unsigned int*)i;
-		if (data[0] == 0x70616d6du && data[8] == 0 && dist(i, data[2]) < 0x2000 && dist(i, data[4]) >= 0x2000) {
-			if (ret == 0) {
-				ret = i + 8;
-			} else {
-				return 0xffffffffu;
-			}
-		}
-	}
-	return ret;
 }
 
 static unsigned int read2(const unsigned char* pos) {
@@ -153,10 +115,34 @@ unsigned int allocate_region_without_allocation(unsigned int size) {
 	return ptr;
 }
 
+/*
+アドレスaddrがelementの範囲より前 → 負の数を返す
+アドレスaddrがelementの範囲内 → 0を返す
+アドレスaddrがelementの範囲より後 → 正の数を返す
+*/
+static int compareElement(unsigned int addr, const struct mmap_element* element) {
+	if (element->start[1] || addr < element->start[0]) {
+		/* 指定の要素の範囲より前 */
+		return -1;
+	}
+	if (element->numPages[1] || ((addr - element->start[0]) >> 12) < element->numPages[0]) {
+		/* 指定の要素の開始地点からの距離(ページ数)が、指定の要素のページ数未満 */
+		return 0;
+	}
+	return 1;
+}
+
+#include "serial_direct.h"
+
 void initialize_pages(struct initial_regs* regs) {
-	unsigned int mmap_addr;
-	struct mmap_entry* mmap, *mmap_current, *mmap_end;
-	struct mmap_entry_64* mmap_64, *mmap_current_64, *mmap_end_64;
+	void* GetMemoryMap;
+	int mmap_ret;
+	unsigned int mmap_sizes[2] = {sizeof(memory_map), 0}, mmap_size;
+	unsigned int mmap_key[2];
+	unsigned int mmap_element_sizes[2] = {0, 0}, mmap_element_size;
+	unsigned int mmap_version[2];
+	unsigned int mmap_current;
+	struct mmap_element* mmap_current_ptr;
 
 	unsigned char* pe_header = (unsigned char*)0xc0000000;
 	unsigned int pe_new_header, pe_opt_header_size;
@@ -196,27 +182,59 @@ void initialize_pages(struct initial_regs* regs) {
 	if (pe_image_size >= 0x10000000u) panic("PE image too large");
 	if (pe_stack_size >= 0x10000000u) panic("PE stack too large");
 
-	/* メモリマップを探す */
-	mmap_addr = search_mmap(regs->iregs.esp & 0xfe000000u, (regs->iregs.esp & 0xfe000000u) + 0x2000000);
-	if (mmap_addr == 0xffffffffu) panic("multiple mmap found");
-	if (mmap_addr == 0) {
-		mmap_addr = search_mmap_64(regs->iregs.esp & 0xfe000000u, (regs->iregs.esp & 0xfe000000u) + 0x2000000);
-		if (mmap_addr == 0) panic("mmap(_64) not found");
-		if (mmap_addr == 0xffffffffu) panic("multiple mmap_64 found");
-		mmap = 0;
-		mmap_end = 0;
-		mmap_current = 0;
-		mmap_64 = (struct mmap_entry_64*)mmap_addr;
-		mmap_end_64 = mmap_64->prev;
-		mmap_current_64 = mmap_64;
+	/* メモリマップを取得する */
+	if (regs->efer & 0x400) {
+		/* Long Mode */
+		unsigned int* table = (unsigned int*)regs->iregs.edx;
+		unsigned int* services = (unsigned int*)table[24];
+		GetMemoryMap = (void*)services[6 + 2 * 4];
 	} else {
-		mmap = (struct mmap_entry*)mmap_addr;
-		mmap_end = mmap->prev;
-		mmap_current = mmap;
-		mmap_64 = 0;
-		mmap_end_64 = 0;
-		mmap_current_64 = 0;
+		unsigned int* table = (unsigned int*)((unsigned int*)regs->iregs.esp)[2];
+		unsigned int* services = (unsigned int*)table[15];
+		GetMemoryMap = (void*)services[6 + 4];
 	}
+	mmap_ret = call_uefi(regs, GetMemoryMap, (unsigned int)mmap_sizes,
+		(unsigned int)memory_map - 0xc0000000u + 0x00400000u,
+		(unsigned int)mmap_key, (unsigned int)mmap_element_sizes, (unsigned int)mmap_version);
+	if (mmap_ret < 0) panic("GetMemoryMap failed");
+	if (mmap_sizes[1]) panic("memory map too large");
+	if (mmap_element_sizes[1]) panic("memory map element too large");
+	mmap_size = mmap_sizes[0];
+	mmap_element_size = mmap_element_sizes[0];
+	if (mmap_element_size < sizeof(struct mmap_element)) panic("memory map element too small");
+	/* メモリマップの内容をチェックする */
+	{
+		unsigned int prev_addr = 0;
+		for (i = 0; i + mmap_element_size <= mmap_size; i += mmap_element_size) {
+			struct mmap_element* element = (struct mmap_element*)(memory_map + i);
+			if (element->start[1]) {
+				/* pages that exceeds 4GB won't be used */
+				continue;
+			}
+			if (element->start[0] & 0xfff) {
+				/* this won't happen */
+				panic("memory map not aligned");
+			}
+			if (element->start[0] < prev_addr) {
+				/* currently unsupported */
+				panic("memory map overwrapped or not sorted");
+			}
+			if (element->numPages[1] || element->numPages[0] >= 0x100000u) {
+				/* the size is >= 4GB */
+				prev_addr = 0xffffffffu;
+			} else {
+				unsigned int new_prev_addr = (element->start[0] >> 12) + element->numPages[0];
+				if (new_prev_addr >= 0x100000u) {
+					/* the end is >= 4GB */
+					prev_addr = 0xffffffffu;
+				} else {
+					prev_addr = new_prev_addr << 12;
+				}
+			}
+		}
+	}
+	mmap_current = 0;
+	mmap_current_ptr = (struct mmap_element*)memory_map;
 
 	/* メモリマップからavailableの場所(プログラムの場所を除く)を一覧にする (作業用の最低限) */
 	physical_pages = physical_pages_temp;
@@ -225,22 +243,13 @@ void initialize_pages(struct initial_regs* regs) {
 		if (pe_start <= current_addr && current_addr < pe_start + pe_image_size) {
 			current_addr = pe_start + ((pe_image_size + 0xfff) & ~0xfff);
 		}
-		if (mmap != 0) {
-			while (mmap_current != mmap_end && (current_addr < mmap_current->start || mmap_current->end < current_addr)) {
-				mmap_current = mmap_current->next;
-			}
-			if (mmap_current == mmap_end) break;
-			if (mmap_current->type == 7) {
-				physical_pages[available_physical_pages++] = current_addr;
-			}
-		} else {
-			while (mmap_current_64 != mmap_end_64 && (current_addr < mmap_current_64->start || mmap_current_64->end < current_addr)) {
-				mmap_current_64 = mmap_current_64->next;
-			}
-			if (mmap_current_64 == mmap_end_64) break;
-			if (mmap_current_64->type == 7) {
-				physical_pages[available_physical_pages++] = current_addr;
-			}
+		while (mmap_current + mmap_element_size <= mmap_size && compareElement(current_addr, mmap_current_ptr) > 0) {
+			mmap_current += mmap_element_size;
+			mmap_current_ptr = (struct mmap_element*)(memory_map + mmap_current);
+		}
+		if (mmap_current + mmap_element_size > mmap_size) break;
+		if (compareElement(current_addr, mmap_current_ptr) == 0 && mmap_current_ptr->type == 7) {
+			physical_pages[available_physical_pages++] = current_addr;
 		}
 	}
 	physical_pages_temp_size = available_physical_pages;
@@ -285,22 +294,13 @@ void initialize_pages(struct initial_regs* regs) {
 		if (pe_start <= current_addr && current_addr < pe_start + pe_image_size) {
 			current_addr = pe_start + ((pe_image_size + 0xfff) & ~0xfff);
 		}
-		if (mmap != 0) {
-			while (mmap_current != mmap_end && (current_addr < mmap_current->start || mmap_current->end < current_addr)) {
-				mmap_current = mmap_current->next;
-			}
-			if (mmap_current == mmap_end) break;
-			if (mmap_current->type == 7) {
-				physical_pages[available_physical_pages++] = current_addr;
-			}
-		} else {
-			while (mmap_current_64 != mmap_end_64 && (current_addr < mmap_current_64->start || mmap_current_64->end < current_addr)) {
-				mmap_current_64 = mmap_current_64->next;
-			}
-			if (mmap_current_64 == mmap_end_64) break;
-			if (mmap_current_64->type == 7) {
-				physical_pages[available_physical_pages++] = current_addr;
-			}
+		while (mmap_current + mmap_element_size <= mmap_size && compareElement(current_addr, mmap_current_ptr) > 0) {
+			mmap_current += mmap_element_size;
+			mmap_current_ptr = (struct mmap_element*)(memory_map + mmap_current);
+		}
+		if (mmap_current + mmap_element_size > mmap_size) break;
+		if (compareElement(current_addr, mmap_current_ptr) == 0 && mmap_current_ptr->type == 7) {
+			physical_pages[available_physical_pages++] = current_addr;
 		}
 	}
 
@@ -309,35 +309,23 @@ void initialize_pages(struct initial_regs* regs) {
 	for (i = 0; i < 0x300; i++) next_pde[i] = 0;
 	for (i = 0x300; i < 0x400; i++) next_pde[i] = pde_physical[i];
 
-	/* メモリマップに載っている0xc0000000以下の場所をマップする */
-	if (mmap != 0) {
-		for (mmap_current = mmap; mmap_current != mmap_end; mmap_current = mmap_current->next) {
-			unsigned int addr;
-			for (addr = mmap_current->start & ~0xfff; addr <= mmap_current->end && addr <= 0xc0000000u; addr += 0x1000) {
-				if (mmap_current->type == 7) {
-					/* available */
-					map_pde(next_pde, addr, addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
-				} else {
-					/* available以外 */
-					acquire_ppage(addr);
-					map_pde(next_pde, addr, addr, PAGE_FLAG_PRESENT);
-				}
+	/* メモリマップに載っている0xc0000000未満の場所をマップする */
+	mmap_current = 0;
+	mmap_current_ptr = (struct mmap_element*)memory_map;
+	while (mmap_current + mmap_element_size <= mmap_size) {
+		unsigned int addr;
+		for (addr = mmap_current_ptr->start[0]; compareElement(addr, mmap_current_ptr) == 0 && addr < 0xc0000000u; addr += 0x1000) {
+			if (mmap_current_ptr->type == 7) {
+				/* available */
+				map_pde(next_pde, addr, addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
+			} else {
+				/* available以外 */
+				acquire_ppage(addr);
+				map_pde(next_pde, addr, addr, PAGE_FLAG_PRESENT);
 			}
 		}
-	} else {
-		for (mmap_current_64 = mmap_64; mmap_current_64 != mmap_end_64; mmap_current_64 = mmap_current_64->next) {
-			unsigned int addr;
-			for (addr = mmap_current_64->start & ~0xfff; addr <= mmap_current_64->end && addr <= 0xc0000000u; addr += 0x1000) {
-				if (mmap_current_64->type == 7) {
-					/* available */
-					map_pde(next_pde, addr, addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
-				} else {
-					/* available以外 */
-					acquire_ppage(addr);
-					map_pde(next_pde, addr, addr, PAGE_FLAG_PRESENT);
-				}
-			}
-		}
+		mmap_current += mmap_element_size;
+		mmap_current_ptr = (struct mmap_element*)(memory_map + mmap_current);
 	}
 
 	/* プログラムをマップする (書き込みを許可) */
