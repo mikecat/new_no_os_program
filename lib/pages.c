@@ -9,9 +9,10 @@ unsigned int gdt[] = {
 	0x0000ffffu, 0x00cf9a00u, /* 0x08 ring 0 code segment */
 	0x0000ffffu, 0x00cf9200u, /* 0x10 ring 0 data segment */
 	0x0000ffffu, 0x00cffa00u, /* 0x08 ring 3 code segment */
-	0x0000ffffu, 0x00cff200u, /* 0x10 ring 3 data segment */
-	0x0000ffffu, 0x00af9a00u  /* 0x18 ring 0 Long Mode code segment */
+	0x0000ffffu, 0x00cff200u  /* 0x10 ring 3 data segment */
 };
+
+unsigned int gdt_size = sizeof(gdt);
 
 struct mmap_element {
 	unsigned int type;
@@ -235,6 +236,17 @@ void initialize_pages(struct initial_regs* regs) {
 	}
 	mmap_current = 0;
 	mmap_current_ptr = (struct mmap_element*)memory_map;
+
+	/* GDTを高位に移動する (UEFI関数呼び出しによるメモリマップ取得の後で行う) */
+	__asm__ __volatile__ (
+		"sub $8, %%esp\n\t"
+		"mov %0, 4(%%esp)\n\t"
+		"mov %1, %%eax\n\t"
+		"dec %%eax\n\t"
+		"mov %%ax, 2(%%esp)\n\t"
+		"lgdt 2(%%esp)\n\t"
+		"add $8, %%esp\n\t"
+	: : "r"(gdt), "r"(gdt_size) : "%eax");
 
 	/* メモリマップからavailableの場所(プログラムの場所を除く)を一覧にする (作業用の最低限) */
 	physical_pages = physical_pages_temp;

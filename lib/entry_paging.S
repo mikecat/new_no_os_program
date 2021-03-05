@@ -49,7 +49,11 @@ _entry_paging:
 	sub %ecx, %eax
 	movl %eax, 4(%esp)
 	movl $0, 8(%esp)
-	movw $47, 2(%esp) # size of GDT minus one
+	mov $_gdt_size, %eax
+	sub %ecx, %eax
+	mov (%eax), %eax
+	sub $1, %eax # don't "dec %eax" because it has different meaning in x64
+	mov %ax, 2(%esp) # size of GDT minus one
 	lea 2(%esp), %eax
 	# switch to new CS
 	push $0x08

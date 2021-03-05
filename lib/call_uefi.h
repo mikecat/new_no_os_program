@@ -9,7 +9,10 @@ UEFIの関数を呼ぶ。
 int call_uefi(struct initial_regs* regs, void* function,
 	unsigned int arg1, unsigned int arg2, unsigned int arg3, unsigned int arg4, unsigned int arg5);
 
-/* スタックをidentity-mappedな場所に移し、関数funcを呼ぶ。 */
+/*
+スタックをidentity-mappedな場所に移し、関数funcを呼ぶ。
+ついでにGDTとIDTも(必要に応じて)移す。
+*/
 int callWithIdentStack(int(*func)(void* data), void* data);
 
 #endif

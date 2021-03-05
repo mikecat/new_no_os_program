@@ -231,10 +231,33 @@ call_uefi_no_sti:
 extern _tempBuffer
 extern _tempBufferSize
 global _callWithIdentStack
+; ebp - 0x20 : data_arg            seg_work  seg_work
+; ebp - 0x10 : gdt       gdt       idt       idt
 ; ebp - 0x00 : old_ebp   ret_addr  func      data
 _callWithIdentStack:
 	push ebp
 	mov ebp, esp
+	sub esp, 0x20
+	sgdt [ebp - 0x0e]
+	sidt [ebp - 0x06]
+	cmp dword [ebp - 0x0c], 0xc0000000
+	jb callWithIidentStack_no_gdt_tweak
+	mov eax, [ebp - 0x0c]
+	add eax, 0x00400000 - 0xc0000000
+	mov [ebp - 0x14], eax
+	mov ax, [ebp - 0x0e]
+	mov [ebp - 0x16], ax
+	lgdt [ebp - 0x16]
+callWithIidentStack_no_gdt_tweak:
+	cmp dword [ebp - 0x04], 0xc0000000
+	jb callWithIidentStack_no_idt_tweak
+	mov eax, [ebp - 0x04]
+	add eax, 0x00400000 - 0xc0000000
+	mov [ebp - 0x14], eax
+	mov ax, [ebp - 0x06]
+	mov [ebp - 0x16], ax
+	lidt [ebp - 0x16]
+callWithIidentStack_no_idt_tweak:
 	mov esp, [_tempBuffer]
 	add esp, 0x00400000 - 0xc0000000
 	add esp, [_tempBufferSize]
@@ -244,5 +267,7 @@ _callWithIdentStack:
 	mov [esp + 0], eax
 	mov eax, [ebp + 8]
 	call eax
+	lgdt [ebp - 0x0e]
+	lidt [ebp - 0x06]
 	leave
 	ret
