@@ -25,7 +25,7 @@ void entry(void* placeholder, unsigned int* theTable) {
 		"mov $0xc0000080, %%ecx\n\t"
 		"rdmsr\n\t"
 		"mov %%eax, %1\n\t"
-	: "=m"(altTable), "=m"(msr) : : "%ecx", "%eax");
+	: "=m"(altTable), "=m"(msr) : : "%ecx", "%eax", "%edx");
 
 	(void)placeholder;
 	if (msr & 0x400) {
