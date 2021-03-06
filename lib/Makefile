@@ -6,7 +6,8 @@ RM=rm -f
 TARGET=libnnop.a
 TARGET_D=libnnop_d.a
 
-OBJS=serial_direct.o my_printf.o entry_paging.o pages.o panic.o display.o initialize.o call_uefi.o
+OBJS=serial_direct.o my_printf.o entry_paging.o pages.o panic.o display.o initialize.o \
+	call_uefi.o acpi.o
 
 OBJS_D=$(join $(addsuffix _d,$(basename $(OBJS))),$(suffix $(OBJS)))
 
