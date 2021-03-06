@@ -163,7 +163,7 @@ void entry(unsigned int dummy, unsigned int* first_table) {
 	out16((in_data & ~(7 << 10)) | ((pm1a_value & 7) << 10) | (1 << 13), pm1a);
 	if (pm1b != 0) {
 		in16(in_data, pm1b);
-		out16((in_data & ~(7 << 10)) | ((pm1a_value & 7) << 10) | (1 << 13), pm1b);
+		out16((in_data & ~(7 << 10)) | ((pm1b_value & 7) << 10) | (1 << 13), pm1b);
 	}
 
 	printf_serial_direct("finished.\n");
