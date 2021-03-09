@@ -61,7 +61,7 @@ void release_ppage(unsigned int ppage) {
 unsigned int get_ppage(void) {
 	while (available_physical_pages > 0) {
 		unsigned int index = (unsigned int)physical_pages[available_physical_pages - 1] >> 12;
-		if (physical_pages_refcount[index] > 0) {
+		if (physical_pages_refcount && physical_pages_refcount[index] > 0) {
 			available_physical_pages--;
 		} else {
 			break;
