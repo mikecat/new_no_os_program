@@ -24,5 +24,7 @@ void panic(const char* message) {
 			message++;
 		}
 	}
+	putchar_serial_direct('\r');
+	putchar_serial_direct('\n');
 	for(;;);
 }
