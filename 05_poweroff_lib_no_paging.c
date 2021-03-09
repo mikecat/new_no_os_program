@@ -78,6 +78,7 @@ void entry(void* placeholder, unsigned int* theTable) {
 		guidTableNumElements = theTable[16];
 		guidTableElementSize = 5;
 	}
+	init_serial_direct();
 	for (i = 0; i < guidTableNumElements; i++) {
 		unsigned int* element = guidTable + guidTableElementSize * i;
 		if (element[0] == guidTarget[0] && element[1] == guidTarget[1] &&

@@ -160,6 +160,9 @@ void initialize_pages(struct initial_regs* regs) {
 
 	int i;
 
+	/* シリアルポートを初期化する (panicで使うので) */
+	init_serial_direct();
+
 	/* PEヘッダの情報を読み取る */
 	if (read2(pe_header) != 0x5a4d) panic("PE header Magic mismatch");
 	pe_new_header = read4(pe_header + 0x3c);
