@@ -3,6 +3,7 @@
 #include "regs.h"
 #include "panic.h"
 #include "call_uefi.h"
+#include "serial_direct.h"
 
 unsigned int gdt[] = {
 	0, 0,
@@ -132,8 +133,6 @@ static int compareElement(unsigned int addr, const struct mmap_element* element)
 	}
 	return 1;
 }
-
-#include "serial_direct.h"
 
 void initialize_pages(struct initial_regs* regs) {
 	void* GetMemoryMap;
