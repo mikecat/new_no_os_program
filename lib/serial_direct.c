@@ -3,15 +3,28 @@
 #include "my_printf.h"
 #include "io_macro.h"
 
+void serial_set_speed(int bps) {
+	int status, value;
+	if (bps <= 0) bps = 1;
+	value = (115200 + bps / 2) / bps;
+	/* get line info */
+	in8(status, 0x03FB);
+	/* enable to write baud rate */
+	out8(status | 0x80, 0x03FB);
+	/* write baud rate setting */
+	out8(value >> 8, 0x03F9); /* MSB */
+	out8(value, 0x03F8); /* LSB */
+	/* restore line info */
+	out8(status, 0x03FB);
+}
+
 void init_serial_direct(void) {
-	/* set to 9600bps */
-	out8(0x83, 0x03FB); /* enable LSB/MSB register */
-	out8(0x00, 0x03F9); /* rate MSB */
-	out8(0x0C, 0x03F8); /* rate LSB */
 	/* set line info */
 	out8(0x03, 0x03FB); /* disable LSB/MSB register, no parity, no 2-bit stop, 8-bit data */
-	/* set moddem info */
+	/* set modem info */
 	out8(0x03, 0x03FC); /* no loopback, no interrupt, RTS on, DTR on */
+	/* set speed */
+	serial_set_speed(115200);
 	/* enable FIFO */
 	out8(0x07, 0x03FA); /* interrupt at 1 byte, clear TX, clear RX, enable */
 	/* disable interrupt */
