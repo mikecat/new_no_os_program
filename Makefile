@@ -15,10 +15,12 @@ TARGETS_NO_PAGING= \
 	04_tanken.img 04_tanken_2.img 04_tanken_mmap.img 04_tanken_mmap_2.img \
 	05_poweroff.img 08_x64_test.img 09_display_list.img 09_display.img \
 	08_x64_test_2.img 10_memorymap.img 05_poweroff_lib_no_paging.img \
+	11_conout.img \
 # --- END_OF_TARGETS ---
 
 TARGETS_PAGING= \
 	07_paging.img 09_display_print_gop.img 09_display_lib.img 05_poweroff_lib.img \
+	11_uefi_printf_test.img \
 # --- END_OF_TARGETS ---
 
 TARGETS=$(TARGETS_NO_PAGING) $(TARGETS_PAGING)
