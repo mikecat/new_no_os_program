@@ -141,23 +141,21 @@ void initialize_pages(struct initial_regs* regs) {
 	unsigned int mmap_key[2];
 	unsigned int mmap_element_sizes[2] = {0, 0}, mmap_element_size;
 	unsigned int mmap_version[2];
-	unsigned int mmap_current;
-	struct mmap_element* mmap_current_ptr;
 
 	unsigned char* pe_header = (unsigned char*)0xc0000000;
 	unsigned int pe_new_header, pe_opt_header_size;
 	unsigned int pe_magic;
 	unsigned int pe_start, pe_image_size, pe_stack_size;
-	unsigned int stack_start;
-	unsigned int current_addr;
+	unsigned int stack_start = 0;
 
 	int physical_pages_temp_size;
 	unsigned int physical_pages_laddr, physical_pages_refcount_laddr;
 
-	unsigned int* pde_physical;
+	unsigned int* pde_physical = 0;
 	unsigned int* next_pde;
 
-	int i;
+	unsigned int current_addr;
+	int i, j;
 
 	/* シリアルポートを初期化する (panicで使うので) */
 	init_serial_direct();
@@ -206,38 +204,43 @@ void initialize_pages(struct initial_regs* regs) {
 	mmap_element_size = mmap_element_sizes[0];
 	if (mmap_element_size < sizeof(struct mmap_element)) panic("memory map element too small");
 	/* メモリマップの内容をチェックする */
-	{
-		unsigned int prev_addr = 0;
-		for (i = 0; i + mmap_element_size <= mmap_size; i += mmap_element_size) {
-			struct mmap_element* element = (struct mmap_element*)(memory_map + i);
-			if (element->start[1]) {
-				/* pages that exceeds 4GB won't be used */
-				continue;
-			}
-			if (element->start[0] & 0xfff) {
-				/* this won't happen */
-				panic("memory map not aligned");
-			}
-			if (element->start[0] < prev_addr) {
-				/* currently unsupported */
-				panic("memory map overwrapped or not sorted");
-			}
-			if (element->numPages[1] || element->numPages[0] >= 0x100000u) {
-				/* the size is >= 4GB */
-				prev_addr = 0xffffffffu;
+	for (i = 0; i + mmap_element_size <= mmap_size; i += mmap_element_size) {
+		struct mmap_element* element = (struct mmap_element*)(memory_map + i);
+		unsigned int endAddr;
+		if (element->start[1]) {
+			/* pages that exceeds 4GB won't be used */
+			continue;
+		}
+		if (element->start[0] & 0xfff) {
+			/* this won't happen */
+			panic("memory map not aligned");
+		}
+		if (element->numPages[1] || element->numPages[0] >= 0x100000u) {
+			/* the size is >= 4GB */
+			endAddr = 0xffffffffu;
+		} else if (element->numPages[0] > 0) {
+			endAddr = (element->start[0] >> 12) + element->numPages[0];
+			if (endAddr >= 0x100000u) {
+				/* the end is >= 4GB */
+				endAddr = 0xffffffffu;
 			} else {
-				unsigned int new_prev_addr = (element->start[0] >> 12) + element->numPages[0];
-				if (new_prev_addr >= 0x100000u) {
-					/* the end is >= 4GB */
-					prev_addr = 0xffffffffu;
-				} else {
-					prev_addr = new_prev_addr << 12;
-				}
+				endAddr = (endAddr << 12) - 1;
+			}
+		} else {
+			/* zero-page entry */
+			continue;
+		}
+		for (j = 0; j < i; j += mmap_element_size) {
+			struct mmap_element* element2 = (struct mmap_element*)(memory_map + j);
+			if (compareElement(element->start[0], element2) > 0 ||
+			compareElement(endAddr, element2) < 0) {
+				/* no collision, OK */
+			} else {
+				/* collision */
+				panic("memory map overwrapped");
 			}
 		}
 	}
-	mmap_current = 0;
-	mmap_current_ptr = (struct mmap_element*)memory_map;
 
 	/* GDTを高位に移動する (UEFI関数呼び出しによるメモリマップ取得の後で行う) */
 	__asm__ __volatile__ (
@@ -250,72 +253,62 @@ void initialize_pages(struct initial_regs* regs) {
 		"add $8, %%esp\n\t"
 	: : "r"(gdt), "r"(gdt_size) : "%eax");
 
-	/* メモリマップからavailableの場所(プログラムの場所を除く)を一覧にする (作業用の最低限) */
+	/* メモリマップからavailableの場所(プログラムの場所を除く)を一覧にする */
 	physical_pages = physical_pages_temp;
 	physical_pages_refcount = 0;
-	for (current_addr = 0x100000; available_physical_pages < 4096 && current_addr < 0xc0000000u; current_addr += 0x1000) {
-		if (pe_start <= current_addr && current_addr < pe_start + pe_image_size) {
-			current_addr = pe_start + ((pe_image_size + 0xfff) & ~0xfff);
-		}
-		while (mmap_current + mmap_element_size <= mmap_size && compareElement(current_addr, mmap_current_ptr) > 0) {
-			mmap_current += mmap_element_size;
-			mmap_current_ptr = (struct mmap_element*)(memory_map + mmap_current);
-		}
-		if (mmap_current + mmap_element_size > mmap_size) break;
-		if (compareElement(current_addr, mmap_current_ptr) == 0 && mmap_current_ptr->type == 7) {
-			physical_pages[available_physical_pages++] = current_addr;
+	for (i = 0; i + mmap_element_size <= mmap_size; i += mmap_element_size) {
+		struct mmap_element* element = (struct mmap_element*)(memory_map + i);
+		if (element->type == 7) {
+			for (current_addr = element->start[0], j = 0;
+			current_addr < 0xc0000000u && (element->numPages[1] || (unsigned int)j < element->numPages[0]);
+			j++, current_addr += 0x1000) {
+				physical_pages[available_physical_pages++] = current_addr;
+				if (physical_pages_refcount == 0 && available_physical_pages >= (int)(sizeof(physical_pages_temp) / sizeof(*physical_pages_temp))) {
+					/* 十分なメモリが確保できたので、切り替えを行う */
+					physical_pages_temp_size = available_physical_pages;
+
+					stack_start = (0xfffff000u - pe_stack_size) & ~0xfff;
+					heap_address = stack_start - 0x1000;
+
+					/* PDEを確保する */
+					pde_physical = (unsigned int*)get_ppage();
+					for (i = 0; i < 0x300; i++) pde_physical[i] = (i << 22) | 0x83;
+					for (i = 0x300; i < 0x400; i++) pde_physical[i] = 0;
+
+					/* プログラムをマップする */
+					for (current_addr = pe_start; current_addr < pe_start + pe_image_size; current_addr += 0x1000) {
+						map_pde(pde_physical, current_addr - pe_start + 0xc0000000u, current_addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
+					}
+
+					/* availableな場所一覧と参照カウント用のメモリを確保する */
+					physical_pages_laddr = allocate_region(pde_physical, 0x400000);
+					physical_pages_refcount_laddr = allocate_region(pde_physical, 0x400000);
+
+					/* PDEを切り替える */
+					set_cr3(pde_physical);
+
+					/* 確保した一覧の場所を設定する */
+					physical_pages = (unsigned int*)physical_pages_laddr;
+					physical_pages_refcount = (unsigned int*)physical_pages_refcount_laddr;
+					for (i = 0; i < available_physical_pages; i++) {
+						physical_pages[i] = physical_pages_temp[i];
+					}
+					/* 使用した分の物理ページの参照を入れる */
+					for (i = available_physical_pages; i < physical_pages_temp_size; i++) {
+						acquire_ppage(physical_pages_temp[i]);
+					}
+					/* プログラムの参照を入れる */
+					for (current_addr = pe_start; current_addr < pe_start + pe_image_size; current_addr += 0x1000) {
+						acquire_ppage(current_addr);
+					}
+				}
+			}
 		}
 	}
-	physical_pages_temp_size = available_physical_pages;
 
-	stack_start = (0xfffff000u - pe_stack_size) & ~0xfff;
-	heap_address = stack_start - 0x1000;
-
-	/* PDEを確保する */
-	pde_physical = (unsigned int*)get_ppage();
-	for (i = 0; i < 0x300; i++) pde_physical[i] = (i << 22) | 0x83;
-	for (i = 0x300; i < 0x400; i++) pde_physical[i] = 0;
-
-	/* プログラムをマップする */
-	for (current_addr = pe_start; current_addr < pe_start + pe_image_size; current_addr += 0x1000) {
-		map_pde(pde_physical, current_addr - pe_start + 0xc0000000u, current_addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
-	}
-
-	/* availableな場所一覧と参照カウント用のメモリを確保する */
-	physical_pages_laddr = allocate_region(pde_physical, 0x400000);
-	physical_pages_refcount_laddr = allocate_region(pde_physical, 0x400000);
-
-	/* PDEを切り替える */
-	set_cr3(pde_physical);
-
-	/* 確保した一覧の場所を設定する */
-	physical_pages = (unsigned int*)physical_pages_laddr;
-	physical_pages_refcount = (unsigned int*)physical_pages_refcount_laddr;
-	for (i = 0; i < available_physical_pages; i++) {
-		physical_pages[i] = physical_pages_temp[i];
-	}
-	/* 使用した分の物理ページの参照を入れる */
-	for (i = available_physical_pages; i < physical_pages_temp_size; i++) {
-		acquire_ppage(physical_pages_temp[i]);
-	}
-	/* プログラムの参照を入れる */
-	for (current_addr = pe_start; current_addr < pe_start + pe_image_size; current_addr += 0x1000) {
-		acquire_ppage(current_addr);
-	}
-
-	/* メモリマップからavailableの場所(プログラムの場所を除く)を一覧にする (続き) */
-	for (; current_addr < 0xc0000000u; current_addr += 0x1000) {
-		if (pe_start <= current_addr && current_addr < pe_start + pe_image_size) {
-			current_addr = pe_start + ((pe_image_size + 0xfff) & ~0xfff);
-		}
-		while (mmap_current + mmap_element_size <= mmap_size && compareElement(current_addr, mmap_current_ptr) > 0) {
-			mmap_current += mmap_element_size;
-			mmap_current_ptr = (struct mmap_element*)(memory_map + mmap_current);
-		}
-		if (mmap_current + mmap_element_size > mmap_size) break;
-		if (compareElement(current_addr, mmap_current_ptr) == 0 && mmap_current_ptr->type == 7) {
-			physical_pages[available_physical_pages++] = current_addr;
-		}
+	if (physical_pages_refcount == 0) {
+		/* 切り替え処理が走らないほどメモリが少ない (Availableが16MiB無かった) */
+		panic("too few memory");
 	}
 
 	/* 全体を4KBページングでマップするためのPDEを用意する */
@@ -324,22 +317,20 @@ void initialize_pages(struct initial_regs* regs) {
 	for (i = 0x300; i < 0x400; i++) next_pde[i] = pde_physical[i];
 
 	/* メモリマップに載っている0xc0000000未満の場所をマップする */
-	mmap_current = 0;
-	mmap_current_ptr = (struct mmap_element*)memory_map;
-	while (mmap_current + mmap_element_size <= mmap_size) {
-		unsigned int addr;
-		for (addr = mmap_current_ptr->start[0]; compareElement(addr, mmap_current_ptr) == 0 && addr < 0xc0000000u; addr += 0x1000) {
-			if (mmap_current_ptr->type == 7) {
+	for (i = 0; i + mmap_element_size <= mmap_size; i += mmap_element_size) {
+		struct mmap_element* element = (struct mmap_element*)(memory_map + i);
+		for (current_addr = element->start[0], j = 0;
+		current_addr < 0xc0000000u && (element->numPages[1] || (unsigned int)j < element->numPages[0]);
+		j++, current_addr += 0x1000) {
+			if (element->type == 7) {
 				/* available */
-				map_pde(next_pde, addr, addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
+				map_pde(next_pde, current_addr, current_addr, PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
 			} else {
 				/* available以外 */
-				acquire_ppage(addr);
-				map_pde(next_pde, addr, addr, PAGE_FLAG_PRESENT);
+				acquire_ppage(current_addr);
+				map_pde(next_pde, current_addr, current_addr, PAGE_FLAG_PRESENT);
 			}
 		}
-		mmap_current += mmap_element_size;
-		mmap_current_ptr = (struct mmap_element*)(memory_map + mmap_current);
 	}
 
 	/* プログラムをマップする (書き込みを許可) */
