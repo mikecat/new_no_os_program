@@ -16,6 +16,18 @@ RSDPのアドレスを指定し、ACPI操作を初期化する
 int initAcpiWithRsdp(unsigned int* rsdp);
 
 /*
+XSDT/RSDTから指定のテーブルの数を数える
+*/
+int countAcpiTable(const char* target);
+
+/*
+XSDT/RSDTから指定のテーブルを取得する
+whichは0-origin
+見つからない場合はNULLを返す
+*/
+unsigned int* getAcpiTable(const char* target, int which);
+
+/*
 ACPIを有効化する
 成功したら非0、失敗したら0を返す
 */

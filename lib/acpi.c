@@ -6,14 +6,12 @@ static const unsigned int guidTarget[] = {
 	0x8868e871u, 0x11d3e4f1u, 0x800022bcu, 0x81883cc7u
 };
 
-static const unsigned int fadtTarget = 0x50434146u;
-
 static const unsigned char s5Target[] = {0x08, 0x5f, 0x53, 0x35, 0x5f, 0x12};
 
 static int initialized = 0;
 
 static unsigned int* rsdp = 0;
-static unsigned int* rsdt = 0;
+static unsigned int* rsdt = 0, *xsdt = 0;
 static unsigned int* fadt = 0;
 static unsigned int* dsdt = 0;
 static unsigned int smi_cmd = 0, acpi_enable = 0, acpi_disable = 0;
@@ -73,14 +71,8 @@ int initAcpiWithRsdp(unsigned int* rsdp_arg) {
 	initialized = 0;
 	rsdp = rsdp_arg;
 	rsdt = (unsigned int*)rsdp[4];
-	fadt = 0;
-	for(i = 9; 4 * i + 4 <= rsdt[1]; i++) {
-		unsigned int* candidate = (unsigned int*)rsdt[i];
-		if (candidate[0] == fadtTarget) {
-			fadt = candidate;
-			break;
-		}
-	}
+	xsdt = (unsigned int*)(rsdp[7] == 0 ? rsdp[6] : 0);
+	fadt = getAcpiTable("FACP", 0);
 	if (fadt == 0) {
 		printf_serial_direct("ACPI: FADT not found\n");
 		return 0;
@@ -149,6 +141,60 @@ int initAcpiWithRsdp(unsigned int* rsdp_arg) {
 	pm1b_value = s5_got[1];
 	initialized = 1;
 	return 1;
+}
+
+int countAcpiTable(const char* target) {
+	unsigned int target_int = 0;
+	char* t = (char*)&target_int;
+	unsigned int i;
+	int count = 0;
+	for (i = 0; i < 4 && i < (int)sizeof(target_int); i++) {
+		t[i] = target[i];
+	}
+	if (xsdt != 0) {
+		for(i = 9; 4 * i + 8 <= xsdt[1]; i += 2) {
+			if (xsdt[i + 1] == 0) {
+				if (*(unsigned int*)xsdt[i] == target_int) {
+					count++;
+				}
+			}
+		}
+	} else {
+		for(i = 9; 4 * i + 4 <= rsdt[1]; i++) {
+			if (*(unsigned int*)rsdt[i] == target_int) {
+				count++;
+			}
+		}
+	}
+	return count;
+}
+
+unsigned int* getAcpiTable(const char* target, int which) {
+	unsigned int target_int = 0;
+	char* t = (char*)&target_int;
+	unsigned int i;
+	int count = 0;
+	for (i = 0; i < 4 && i < (int)sizeof(target_int); i++) {
+		t[i] = target[i];
+	}
+	if (xsdt != 0) {
+		for(i = 9; 4 * i + 8 <= xsdt[1]; i += 2) {
+			if (xsdt[i + 1] == 0) {
+				if (*(unsigned int*)xsdt[i] == target_int) {
+					if (count == which) return (unsigned int*)xsdt[i];
+					count++;
+				}
+			}
+		}
+	} else {
+		for(i = 9; 4 * i + 4 <= rsdt[1]; i++) {
+			if (*(unsigned int*)rsdt[i] == target_int) {
+				if (count == which) return (unsigned int*)rsdt[i];
+				count++;
+			}
+		}
+	}
+	return 0;
 }
 
 int enableAcpi(void) {
