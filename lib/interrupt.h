@@ -14,6 +14,8 @@ typedef void (*interrupt_handler_type)(struct interrupt_regs* regs);
 
 int initInterrupt(struct initial_regs* regs);
 
+void setInterruptMask(int irq, int mask);
+
 void registerInterruptHandler(int id, interrupt_handler_type handler);
 
 #endif
