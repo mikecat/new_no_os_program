@@ -245,3 +245,30 @@ Source = 9
 Global System Interrupt = 0x00000009
 Flags = 0x000D
 ```
+
+## IDT
+
+割り込みをする側は難しそうなので一旦おいといて、割り込みをされる側を見ていく。
+割り込みをされるには、IDTに割り込みハンドラの情報を登録しないといけない。
+これには、以下のサイトが参考になる。
+
+* [０から作るOS開発　割り込みその１　割り込みとIDTとGDT](http://softwaretechnique.web.fc2.com/OS_Development/kernel_development02.html)
+* [Basic x86 interrupts | There is no magic here](https://alex.dzyoba.com/blog/os-interrupts/)
+* [Exceptions - OSDev Wiki](https://wiki.osdev.org/Exceptions)
+
+これを参考に、以下の動作をする割り込みハンドラをアセンブリ言語で作成する。
+割り込み番号ごとにハンドラを作るのは手間なので、Perlのプログラムでアセンブリ言語のソースを生成する。
+このテクニックは、[xv6](https://github.com/mit-pdos/xv6-public)でも使われている。
+
+1, エラーコードが積まれない例外の場合、ダミーのエラーコードをpushする
+2. 割り込み番号をpushする
+3. 整数レジスタの値を保存する
+4. セグメントレジスタの値を保存し、セグメントを切り替える
+5. C言語の割り込みハンドラを呼ぶ
+6. セグメントを戻す
+7. 整数レジスタの値を戻す
+8. 割り込み番号とエラーコードをスタックから取り除く
+9. iret
+
+これを実装することで、ゼロ除算などの例外をキャッチすることができるようになる。
+これを実験するのが、`12_divzero.c`である。

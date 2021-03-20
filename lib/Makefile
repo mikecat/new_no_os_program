@@ -7,7 +7,7 @@ TARGET=libnnop.a
 TARGET_D=libnnop_d.a
 
 OBJS=serial_direct.o my_printf.o entry_paging.o pages.o panic.o display.o initialize.o \
-	call_uefi.o acpi.o uefi_printf.o
+	call_uefi.o acpi.o uefi_printf.o interrupt_vector.o interrupt.o
 
 OBJS_D=$(join $(addsuffix _d,$(basename $(OBJS))),$(suffix $(OBJS)))
 
@@ -46,13 +46,16 @@ $(TARGET_D): $(OBJS_D)
 %_d.o: %.asm
 	nasm -f coff -o $@ $^
 
+interrupt_vector.S: interrupt_vector_gen.pl
+	perl $^ > $@
+
 .PHONY: clean
 clean: clean-release clean-debug
 
 .PHONY: clean-release
 clean-release:
-	$(RM) $(TARGET) $(OBJS)
+	$(RM) $(TARGET) $(OBJS) interrupt_vector.S
 
 .PHONY: clean-debug
 clean-debug:
-	$(RM) $(TARGET_D) $(OBJS_D)
+	$(RM) $(TARGET_D) $(OBJS_D) interrupt_vector.S
