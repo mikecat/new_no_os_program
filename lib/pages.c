@@ -9,8 +9,8 @@ unsigned int gdt[] = {
 	0, 0,
 	0x0000ffffu, 0x00cf9a00u, /* 0x08 ring 0 code segment */
 	0x0000ffffu, 0x00cf9200u, /* 0x10 ring 0 data segment */
-	0x0000ffffu, 0x00cffa00u, /* 0x08 ring 3 code segment */
-	0x0000ffffu, 0x00cff200u  /* 0x10 ring 3 data segment */
+	0x0000ffffu, 0x00cffa00u, /* 0x18 ring 3 code segment */
+	0x0000ffffu, 0x00cff200u  /* 0x20 ring 3 data segment */
 };
 
 unsigned int gdt_size = sizeof(gdt);
