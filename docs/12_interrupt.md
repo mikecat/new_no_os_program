@@ -1,0 +1,247 @@
+# 12. 割り込み
+
+## APIC
+
+割り込みには、大きく分けて割り込みをする側と割り込みをされる側に分けられる。
+まずは割り込みをする側を見ていこう。
+
+割り込みをする側といえば、伝統的には2台の8259である。
+これについては例えばここで解説されている。
+[０から作るOS開発　割り込みその２　PICとIRQ](http://softwaretechnique.web.fc2.com/OS_Development/kernel_development03.html)
+ただし、閲覧時点(2021/03/20)においてICW4の説明などに嘘があるので注意が必要である。
+
+ただ、APICとやらを使うのがモダンらしい。
+[Advanced Configuration and Power Interface Specification](https://www.intel.com/content/dam/www/public/us/en/documents/articles/acpi-config-power-interface-spec.pdf)
+の5.2.11.4あたりを見ると、どうやらAPICにはLocal APICとI/O APICとやらがあるようだ。
+Local APICについては、
+[Intel® 64 and IA-32 Architectures Software Developer Manuals](https://software.intel.com/content/www/us/en/develop/articles/intel-sdm.html)
+の volume 3A: System programming guide, part 1 のChapter 10に載っている。
+しかし、ここにはI/O APICの情報が無い。
+ググった結果、I/O APICはチップセット側にあるらしい。
+
+* [I/O APICについて - 睡分不足](https://mmi.hatenablog.com/entry/2017/04/09/132708)
+* [IOAPIC datasheet for web - ioapic.pdf](https://pdos.csail.mit.edu/6.828/2017/readings/ia32/ioapic.pdf)
+
+これらは後でゆっくり見るとして、まずはACPIのテーブルMADTを見ていこう。
+
+## MADT
+
+まずはQEMUのMADTをダンプしてみる。
+
+```
+(gdb) find /w 0x7e00000,0x7fffff0, 0x43495041
+0x7e6b2e5
+0x7f66000
+0x7f66014
+3 patterns found.
+(gdb) x/32wx 0x7f66014
+0x7f66014:      0x43495041      0x00000001      0x43505842      0x00000001
+0x7f66024:      0xfee00000      0x00000001      0x00000800      0x00000001
+0x7f66034:      0x00000c01      0xfec00000      0x00000000      0x00000a02
+0x7f66044:      0x00000002      0x0a020000      0x00050500      0x000d0000
+0x7f66054:      0x09000a02      0x00000009      0x0a02000d      0x000a0a00
+0x7f66064:      0x000d0000      0x0b000a02      0x0000000b      0x0604000d
+0x7f66074:      0x010000ff      0xafafafaf      0xafafafaf      0xafafafaf
+0x7f66084:      0xafafafaf      0xafafafaf      0xafafafaf      0xafafafaf
+(gdb) x/32wx 0x7f66000
+0x7f66000:      0x43495041      0x00000078      0x4f42ed01      0x20534843
+0x7f66010:      0x43505842      0x43495041      0x00000001      0x43505842
+0x7f66020:      0x00000001      0xfee00000      0x00000001      0x00000800
+0x7f66030:      0x00000001      0x00000c01      0xfec00000      0x00000000
+0x7f66040:      0x00000a02      0x00000002      0x0a020000      0x00050500
+0x7f66050:      0x000d0000      0x09000a02      0x00000009      0x0a02000d
+0x7f66060:      0x000a0a00      0x000d0000      0x0b000a02      0x0000000b
+0x7f66070:      0x0604000d      0x010000ff      0xafafafaf      0xafafafaf
+```
+
+Local APICやI/O APICのアドレスなどの情報が入っているようだ。
+これらをよりあえず読んでみるプログラム`12_madt.c`を作った。
+
+QEMUでの実行結果は、以下のようになった。
+
+```
+Local APIC Address = 0xFEE00000
+Flags = 0x00000001
+Type = 0
+Length = 8
+Processor Local APIC structure
+ACPI Processor ID = 0x00
+APIC ID = 0x00
+Flags = 0x00000001
+
+Type = 1
+Length = 12
+I/O APIC structure
+I/O APIC ID = 0x00
+I/O APIC Address = 0xFEC00000
+Global System Interrupt Base = 0x00000000
+
+Type = 2
+Length = 10
+Interrupt Source Override
+Bus = 0
+Source = 0
+Global System Interrupt = 0x00000002
+Flags = 0x0000
+
+Type = 2
+Length = 10
+Interrupt Source Override
+Bus = 0
+Source = 5
+Global System Interrupt = 0x00000005
+Flags = 0x000D
+
+Type = 2
+Length = 10
+Interrupt Source Override
+Bus = 0
+Source = 9
+Global System Interrupt = 0x00000009
+Flags = 0x000D
+
+Type = 2
+Length = 10
+Interrupt Source Override
+Bus = 0
+Source = 10
+Global System Interrupt = 0x0000000A
+Flags = 0x000D
+
+Type = 2
+Length = 10
+Interrupt Source Override
+Bus = 0
+Source = 11
+Global System Interrupt = 0x0000000B
+Flags = 0x000D
+
+Type = 4
+Length = 6
+Local APIC NMI Structure
+ACPI Processor ID = 0xFF
+Flags = 0x0000
+Local APIC LINT# = 1
+```
+
+VirtualBoxでの実行結果は、以下のようになった。
+ただし、「I/O APICを有効化」にチェックを入れないとMADT not foundとなった。
+
+```
+Local APIC Address = 0xFEE00000
+Flags = 0x00000001
+Type = 2
+Length = 10
+Interrupt Source Override
+Bus = 0
+Source = 0
+Global System Interrupt = 0x00000002
+Flags = 0x0000
+
+Type = 2
+Length = 10
+Interrupt Source Override
+Bus = 0
+Source = 9
+Global System Interrupt = 0x00000009
+Flags = 0x000F
+
+Type = 0
+Length = 8
+Processor Local APIC structure
+ACPI Processor ID = 0x00
+APIC ID = 0x00
+Flags = 0x00000001
+
+Type = 1
+Length = 12
+I/O APIC structure
+I/O APIC ID = 0x01
+I/O APIC Address = 0xFEC00000
+Global System Interrupt Base = 0x00000000
+```
+
+LattePandaでの実行結果は、以下のようになった。
+
+```
+Local APIC Address = 0xFEE00000
+Flags = 0x00000001
+Type = 0
+Length = 8
+Processor Local APIC structure
+ACPI Processor ID = 0x01
+APIC ID = 0x00
+Flags = 0x00000001
+
+Type = 4
+Length = 6
+Local APIC NMI Structure
+ACPI Processor ID = 0x01
+Flags = 0x0005
+Local APIC LINT# = 1
+
+Type = 0
+Length = 8
+Processor Local APIC structure
+ACPI Processor ID = 0x02
+APIC ID = 0x02
+Flags = 0x00000001
+
+Type = 4
+Length = 6
+Local APIC NMI Structure
+ACPI Processor ID = 0x02
+Flags = 0x0005
+Local APIC LINT# = 1
+
+Type = 0
+Length = 8
+Processor Local APIC structure
+ACPI Processor ID = 0x03
+APIC ID = 0x04
+Flags = 0x00000001
+
+Type = 4
+Length = 6
+Local APIC NMI Structure
+ACPI Processor ID = 0x03
+Flags = 0x0005
+Local APIC LINT# = 1
+
+Type = 0
+Length = 8
+Processor Local APIC structure
+ACPI Processor ID = 0x04
+APIC ID = 0x06
+Flags = 0x00000001
+
+Type = 4
+Length = 6
+Local APIC NMI Structure
+ACPI Processor ID = 0x04
+Flags = 0x0005
+Local APIC LINT# = 1
+
+Type = 1
+Length = 12
+I/O APIC structure
+I/O APIC ID = 0x01
+I/O APIC Address = 0xFEC00000
+Global System Interrupt Base = 0x00000000
+
+Type = 2
+Length = 10
+Interrupt Source Override
+Bus = 0
+Source = 0
+Global System Interrupt = 0x00000002
+Flags = 0x0000
+
+Type = 2
+Length = 10
+Interrupt Source Override
+Bus = 0
+Source = 9
+Global System Interrupt = 0x00000009
+Flags = 0x000D
+```
