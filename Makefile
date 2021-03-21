@@ -1,10 +1,10 @@
 CC=gcc
-CFLAGS=-Ilib -Llib -m32 -nostdlib -Wall -Wextra -O2
-CFLAGS_D=-Llib -Ilib -m32 -nostdlib -Wall -Wextra -Og -g3
+CFLAGS=-Ilib -Llib -m32 -nostdlib -fno-leading-underscore -Wall -Wextra -O2
+CFLAGS_D=-Llib -Ilib -m32 -nostdlib -fno-leading-underscore -Wall -Wextra -Og -g3
 RM=rm -f
 
-ENTRY_NO_PAGING=_entry
-ENTRY_PAGING=_entry_paging
+ENTRY_NO_PAGING=entry
+ENTRY_PAGING=entry_paging
 
 IMAGE_BASE_NO_PAGING=0x00400000
 IMAGE_BASE_PAGING=0xc0000000

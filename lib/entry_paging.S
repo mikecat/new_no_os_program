@@ -1,6 +1,6 @@
 .text
-.globl _entry_paging
-_entry_paging:
+.globl entry_paging
+entry_paging:
 	# save original registers (format of PUSHA)
 	sub $88,%esp
 	mov %edi, (%esp)
@@ -45,11 +45,11 @@ _entry_paging:
 	# initialize GDT
 	sub $16, %esp # allocate space for LGDT
 	mov $0xbfc00000, %ecx # 0xc0000000 - 0x00400000
-	mov $_gdt, %eax
+	mov $gdt, %eax
 	sub %ecx, %eax
 	movl %eax, 4(%esp)
 	movl $0, 8(%esp)
-	mov $_gdt_size, %eax
+	mov $gdt_size, %eax
 	sub %ecx, %eax
 	mov (%eax), %eax
 	sub $1, %eax # don't "dec %eax" because it has different meaning in x64
@@ -156,7 +156,7 @@ no_offset:
 	or $0x80000000, %eax
 	mov %eax, %cr0
 	# jump to C initializer
-	mov $_initialize_pages, %eax
+	mov $initialize_pages, %eax
 	call *%eax
 fallback:
 	jmp fallback

@@ -353,9 +353,9 @@ void initialize_pages(struct initial_regs* regs) {
 		"mov $0xffffee00, %%esp\n\t"
 		"mov %1, (%%esp)\n\t"
 		"push %1\n\t"
-		"call _library_initialize\n\t"
+		"call library_initialize\n\t"
 		"pop %%eax\n\t"
-		"call _entry\n\t"
+		"call entry\n\t"
 		"1:\n\t"
 		"jmp 1b\n\t"
 	: : "r"(next_pde), "r"(regs));

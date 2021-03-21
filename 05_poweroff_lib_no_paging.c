@@ -37,7 +37,7 @@ void entry(void* placeholder, unsigned int* theTable) {
 			"push %ebp\n\t"
 			"mov %esp, %ebp\n\t"
 			"sub $16, %esp\n\t"
-			"movl $_gdt, 4(%esp)\n\t"
+			"movl $gdt, 4(%esp)\n\t"
 			"movl $0, 8(%esp)\n\t"
 			"movw $23, 2(%esp)\n\t"
 			"lea 2(%esp), %eax\n\t"

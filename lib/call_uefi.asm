@@ -1,6 +1,6 @@
 bits 32
 section .text
-global _call_uefi
+global call_uefi
 ; ebp - 0x70 : stack?    stack?    stack?    stack?
 ; ebp - 0x60 : shadow    shadow    shadow    shadow
 ; ebp - 0x50 : shadow    shadow    shadow    shadow
@@ -11,7 +11,7 @@ global _call_uefi
 ; ebp - 0x00 : old_ebp   ret_addr  regs      function
 ; ebp + 0x10 : arg1      arg2      arg3      arg4
 ; ebp + 0x20 : arg5
-_call_uefi:
+call_uefi:
 	; prorogue
 	push ebp
 	mov ebp, esp
@@ -228,13 +228,13 @@ call_uefi_no_sti:
 	leave
 	ret
 
-extern _tempBuffer
-extern _tempBufferSize
-global _callWithIdentStack
+extern tempBuffer
+extern tempBufferSize
+global callWithIdentStack
 ; ebp - 0x20 : data_arg            seg_work  seg_work
 ; ebp - 0x10 : gdt       gdt       idt       idt
 ; ebp - 0x00 : old_ebp   ret_addr  func      data
-_callWithIdentStack:
+callWithIdentStack:
 	push ebp
 	mov ebp, esp
 	sub esp, 0x20
@@ -258,9 +258,9 @@ callWithIidentStack_no_gdt_tweak:
 	mov [ebp - 0x16], ax
 	lidt [ebp - 0x16]
 callWithIidentStack_no_idt_tweak:
-	mov esp, [_tempBuffer]
+	mov esp, [tempBuffer]
 	add esp, 0x00400000 - 0xc0000000
-	add esp, [_tempBufferSize]
+	add esp, [tempBufferSize]
 	sub esp, 4
 	and esp, 0xfffffff0
 	mov eax, [ebp + 12]

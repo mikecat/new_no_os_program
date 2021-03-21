@@ -39,7 +39,7 @@ void entry(void* placeholder, unsigned int* theTable) {
 			".byte 0x49, 0x89, 0xc8\n\t" /* mov %rcx, %r8 */
 			".byte 0x49, 0x89, 0xd1\n\t" /* mov %rdx, $r9 */
 			"mov %2, %%ecx\n\t"
-			"mov $_data, %%edx\n\t"
+			"mov $data, %%edx\n\t"
 			"mov %1, %%eax\n\t"
 			"push %%ebp\n\t"
 			"mov %%esp, %%ebp\n\t"
@@ -63,7 +63,7 @@ void entry(void* placeholder, unsigned int* theTable) {
 			"push %ebp\n\t"
 			"mov %esp, %ebp\n\t"
 			"sub $16, %esp\n\t"
-			"movl $_gdt, 4(%esp)\n\t"
+			"movl $gdt, 4(%esp)\n\t"
 			"movl $0, 8(%esp)\n\t"
 			"movw $23, 2(%esp)\n\t"
 			"lea 2(%esp), %eax\n\t"

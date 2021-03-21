@@ -1,6 +1,6 @@
 CC=gcc
-CFLAGS=-m32 -Wall -Wextra -O2
-CFLAGS_D=-m32 -Wall -Wextra -Og -g3
+CFLAGS=-m32 -fno-leading-underscore -Wall -Wextra -O2
+CFLAGS_D=-m32 -fno-leading-underscore -Wall -Wextra -Og -g3
 AR=ar
 RM=rm -f
 TARGET=libnnop.a

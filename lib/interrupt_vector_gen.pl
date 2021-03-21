@@ -30,7 +30,7 @@ interrupt_handler_call:
 	mov \%gs, \%ax
 	mov \%ax, 10(\%esp)
 	mov \%ecx, (\%esp)
-	call _interrupt_handler
+	call interrupt_handler
 	mov 6(\%esp), \%ax
 	mov \%ax, \%es
 	mov 8(\%esp), \%ax
@@ -45,9 +45,9 @@ interrupt_handler_call:
 	iret
 
 .data
-.globl _interrupt_handler_list
+.globl interrupt_handler_list
 .balign 4
-_interrupt_handler_list:
+interrupt_handler_list:
 EOF
 
 for (my $i = 0; $i < 256; $i++) {
