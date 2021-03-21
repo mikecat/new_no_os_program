@@ -2,6 +2,8 @@
 #include "uefi_printf.h"
 
 void entry(struct initial_regs* regs) {
+	(void)regs;
+
 	uefiPrintf("hello, world\n");
 	uefiPrintf("\n");
 	uefiPrintf("[%d][%5d][%05d]\n", 1, 2, 3);
