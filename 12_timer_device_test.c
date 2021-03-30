@@ -21,8 +21,8 @@ void entry(struct initial_regs* regs) {
 	(void)regs;
 	registerInterruptHandler(0x20, handler);
 	out8_imm8(0x34, 0x43); /* set timer 0 to pulse generation binary mode */
-	out8_imm8(counterSet, 0x30);
-	out8_imm8(counterSet >> 8, 0x30);
+	out8_imm8(counterSet, 0x40);
+	out8_imm8(counterSet >> 8, 0x40);
 	setInterruptMask(0, 0);
 	for(;;) {
 		__asm__ __volatile__ ("hlt\n\t");
