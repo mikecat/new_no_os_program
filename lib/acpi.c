@@ -159,7 +159,7 @@ int countAcpiTable(const char* target) {
 				}
 			}
 		}
-	} else {
+	} else if (rsdt != 0) {
 		for(i = 9; 4 * i + 4 <= rsdt[1]; i++) {
 			if (*(unsigned int*)rsdt[i] == target_int) {
 				count++;
@@ -186,7 +186,7 @@ unsigned int* getAcpiTable(const char* target, int which) {
 				}
 			}
 		}
-	} else {
+	} else if (rsdt != 0) {
 		for(i = 9; 4 * i + 4 <= rsdt[1]; i++) {
 			if (*(unsigned int*)rsdt[i] == target_int) {
 				if (count == which) return (unsigned int*)rsdt[i];
