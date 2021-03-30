@@ -21,7 +21,7 @@ TARGETS_NO_PAGING= \
 TARGETS_PAGING= \
 	07_paging.img 09_display_print_gop.img 09_display_lib.img 05_poweroff_lib.img \
 	11_uefi_printf_test.img 12_madt.img 12_divzero.img 12_timer_device_test.img \
-	12_madt_uefi_print.img \
+	12_madt_uefi_print.img 12_serial_test.img \
 # --- END_OF_TARGETS ---
 
 TARGETS=$(TARGETS_NO_PAGING) $(TARGETS_PAGING)
