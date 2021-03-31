@@ -79,7 +79,7 @@ void entry(struct initial_regs* regs) {
 		"mov $1, %%eax\n\t"
 		"cpuid\n\t"
 	: "=c"(cpuid_ecx), "=d"(cpuid_edx) : : "%eax", "%ebx");
-	enable_sse = !!(cpuid_edx & (1u << 25)); /* SSE supported? */
+	enable_sse = !!(cpuid_edx & (3u << 24)); /* FXSR and SSE supported? */
 	enable_avx = (cpuid_ecx & (5u << 26)) == (5u << 26); /* XSAVE and AVX supported? */
 
 	if (enable_avx) {
