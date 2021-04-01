@@ -255,10 +255,10 @@ int initInterrupt(struct initial_regs* regs) {
 				write_msr32(0x100f4, 0x836);
 				/* LVT Error */
 				write_msr32(0x100f5, 0x837);
-				if ((cpuid_edx & 0x4008) == 0x4008) { /* MCA & MCE */
-					/* LVT CMCI */
-					write_msr32(0x100f6, 0x82f);
-				}
+#if 0
+				/* LVT CMCI */
+				write_msr32(0x100f6, 0x82f);
+#endif
 				/* APIC id */
 				read_msr32(apicId, 0x802);
 			} else if (lapicHigh != 0) {
@@ -285,10 +285,10 @@ int initInterrupt(struct initial_regs* regs) {
 				localApic[0x360 >> 2] = 0x100f4;
 				/* LVT Error */
 				localApic[0x370 >> 2] = 0x100f5;
-				if ((cpuid_edx & 0x4008) == 0x4008) { /* MCA & MCE */
-					/* LVT CMCI */
-					localApic[0x2f0 >> 2] = 0x100f6;
-				}
+#if 0
+				/* LVT CMCI */
+				localApic[0x2f0 >> 2] = 0x100f6;
+#endif
 				/* APIC id */
 				apicId = localApic[0x20 >> 2];
 			}

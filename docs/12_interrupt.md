@@ -306,3 +306,6 @@ Flags = 0x000D
 CPUIDでMachine Checkの有無を判定し、ある場合のみ初期化するようにした。
 
 参考：[assembly - Questions about APIC interrupt - Stack Overflow](https://stackoverflow.com/questions/57373473/questions-about-apic-interrupt)
+
+…が、`qemu-system-x86_64`ではこのチェックをすり抜けてLVT CMDI Registerにアクセスし、エラーになった。
+そこで、LVT CMCI Registerの初期化はとりあえず完全に無くすことにした。
