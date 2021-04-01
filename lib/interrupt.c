@@ -1,6 +1,8 @@
 #include "interrupt.h"
 #include "acpi.h"
+#include "pages.h"
 #include "io_macro.h"
+#include "serial_direct.h"
 
 /* interrupt_vector.S */
 extern unsigned int interrupt_handler_list[];
@@ -9,9 +11,54 @@ static unsigned int interruptGate[2 * 256];
 
 static interrupt_handler_type interruptHandlers[256];
 
+struct ioapic_info {
+	unsigned int physicalAddr;
+	volatile unsigned int* logicalAddr;
+	unsigned int ibase;
+	unsigned char inum, is_sapic;
+};
+
+static struct ioapic_info ioapics[256];
+
+volatile unsigned int* localApic;
+
+enum {
+	Pol_activeHigh = 1, Pol_activeLow = 3,
+	Tri_edge = 1, Tri_level = 3
+};
+
+struct interruptSourceOverride_info {
+	unsigned int globalSystemInterrupt;
+	unsigned char pol, tri, isDefault, disabled;
+	unsigned char ioApicId, ioApicOffset;
+};
+
+static struct interruptSourceOverride_info interruptSourceOverride[16];
+
+enum {
+	INTERRUPT_UNINITIALIZED,
+	INTERRUPT_UNSUPPORTED,
+	INTERRUPT_8259,
+	INTERRUPT_xAPIC,
+	INTERRUPT_x2APIC
+};
+
+static int interruptMode = INTERRUPT_UNINITIALIZED;
+
+static unsigned int read2(const unsigned char* data) {
+	return data[0] | (data[1] << 8);
+}
+
+static unsigned int read4(const unsigned char* data) {
+	return data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24);
+}
+
 int initInterrupt(struct initial_regs* regs) {
-	int i;
+	unsigned int i;
 	unsigned int* madt;
+	unsigned int cpuid_ecx, cpuid_edx;
+	int is_8259_available = 0, apic_available = 0, x2apic_available = 0;
+	if (interruptMode != INTERRUPT_UNINITIALIZED) return interruptMode != INTERRUPT_UNSUPPORTED;
 
 	(void)regs;
 
@@ -28,9 +75,25 @@ int initInterrupt(struct initial_regs* regs) {
 		"add $8, %%esp\n\t"
 	: : "r"(interruptGate), "a"(sizeof(interruptGate)) : "memory");
 
-	madt = getAcpiTable("MADT", 0);
+	__asm__ __volatile__ (
+		"xor %%eax, %%eax\n\t"
+		"cpuid\n\t"
+		"test %%eax, %%eax\n\t"
+		"jnz 1f\n\t"
+		/* eax = 0 -> CPUID with eax=1 not available */
+		"xor %%ecx, %%ecx\n\t"
+		"xor %%edx, %%edx\n\t"
+		"jmp 2f\n\t"
+		"1:\n\t"
+		"mov $1, %%eax\n\t"
+		"cpuid\n\t"
+		"2:\n\t"
+	: "=c"(cpuid_ecx), "=d"(cpuid_edx) : : "%eax", "%ebx");
+
+	madt = getAcpiTable("APIC", 0);
 	/* initialize 8259 */
 	if (madt == 0 || (madt[10] & 1)) {
+		is_8259_available = 1;
 		/* ICW1 */
 		out8_imm8(0x11, 0x20);
 		out8_imm8(0x11, 0xA0);
@@ -47,22 +110,362 @@ int initInterrupt(struct initial_regs* regs) {
 		out8_imm8(0xff, 0x21);
 		out8_imm8(0xff, 0xA1);
 	}
+	/* initialize APIC */
+	if ((cpuid_edx & 0x200) && madt != 0 && madt[1] >= 46) {
+		unsigned int lapic = madt[9], lapicHigh = 0;
+		unsigned char* tableBegin = (unsigned char*)&madt[11];
+		unsigned char* table = tableBegin;
+		unsigned int tableSize = madt[1] - 44;
+		int invalid = 0;
+		unsigned int apicId = 0;
+		unsigned int* cr3;
+		get_cr3(cr3);
+		/* retrieve Local APIC address and I/O APIC information */
+		for (i = 0; i < 256; i++) {
+			ioapics[i].logicalAddr = 0;
+			ioapics[i].is_sapic = 0;
+		}
+		for (i = 0; i < 16; i++) {
+			interruptSourceOverride[i].globalSystemInterrupt = i;
+			interruptSourceOverride[i].pol = Pol_activeHigh;
+			interruptSourceOverride[i].tri = Tri_edge;
+			interruptSourceOverride[i].isDefault = 1;
+			interruptSourceOverride[i].disabled = 0;
+		}
+		while ((unsigned int)(table - tableBegin) <= tableSize - 2) {
+			unsigned int type = table[0], length = table[1];
+			if (length <= tableSize && (unsigned int)(table - tableBegin) <= tableSize - length) {
+				switch (type) {
+					case 1: /* I/O APIC Structure */
+						if (length >= 12) {
+							int id = table[2];
+							if (ioapics[id].logicalAddr == 0) {
+								ioapics[id].physicalAddr = read4(&table[4]);
+								ioapics[id].logicalAddr = (unsigned int*)0xffffffffu;
+								ioapics[id].ibase = read4(&table[8]);
+							} else if (!ioapics[id].is_sapic) {
+								printf_serial_direct("interrupt: multiple I/O APIC id %d\n", id);
+								invalid = 1;
+							}
+						}
+						break;
+					case 2: /* Interrupt Source Override Structure */
+						if (length >= 10) {
+							int id = table[3];
+							int flags = read2(&table[8]);
+							if (0 <= id && id < 16) {
+								interruptSourceOverride[id].globalSystemInterrupt = read4(&table[4]);
+								if ((flags & 3) != 0) interruptSourceOverride[id].pol = flags & 3;
+								if (((flags >> 2) & 3) != 0) interruptSourceOverride[id].tri = (flags >> 2) & 3;
+								interruptSourceOverride[id].isDefault = 0;
+							}
+						}
+						break;
+					case 5: /* Local APIC Address Override Structure */
+						if (length >= 12) {
+							lapic = read4(&table[4]);
+							lapicHigh = read4(&table[8]);
+						}
+						break;
+					case 6: /* I/O SAPIC Structure */
+						if (length >= 16) {
+							int id = table[2];
+							if (ioapics[id].logicalAddr == 0 || !ioapics[id].is_sapic) {
+								ioapics[id].physicalAddr = read4(&table[8]);
+								ioapics[id].logicalAddr = (unsigned int*)0xffffffffu;
+								ioapics[id].ibase = read4(&table[4]);
+								if (read4(&table[12]) != 0) {
+									printf_serial_direct("interrupt: high I/O SAPIC address not supported\n");
+									invalid = 1;
+								}
+							} else {
+								printf_serial_direct("interrupt: multiple I/O SAPIC id %d\n", id);
+								invalid = 1;
+							}
+						}
+						break;
+				}
+			}
+			table += length;
+		}
+		if (!invalid) {
+			/* initialize I/O APIC map and retrieve information */
+			for (i = 0; i < 256; i++) {
+				if (ioapics[i].logicalAddr) {
+					unsigned int addr = allocate_region_without_allocation(4096);
+					ioapics[i].logicalAddr = (unsigned int*)addr;
+					map_pde(cr3, addr, ioapics[i].physicalAddr, PAGE_FLAG_CACHE_DISABLE | PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
+					ioapics[i].logicalAddr[0] = 0x01;
+					ioapics[i].inum = ((ioapics[i].logicalAddr[4] >> 16) & 0xff) + 1;
+				}
+			}
+			for (i = 0; i < 16; i++) {
+				unsigned int j;
+				/* skip if already disabled by collision check */
+				if (interruptSourceOverride[i].disabled) continue;
+				interruptSourceOverride[i].disabled = 1;
+				for (j = 0; j < 256; j++) {
+					if (ioapics[j].logicalAddr && ioapics[j].ibase <= interruptSourceOverride[i].globalSystemInterrupt &&
+					interruptSourceOverride[i].globalSystemInterrupt - ioapics[j].ibase < ioapics[j].inum) {
+						interruptSourceOverride[i].ioApicId = j;
+						interruptSourceOverride[i].ioApicOffset = (unsigned char)(interruptSourceOverride[i].globalSystemInterrupt - ioapics[j].ibase);
+						interruptSourceOverride[i].disabled = 0;
+						break;
+					}
+				}
+				/* skip if appropriate I/O APIC is not found */
+				if (interruptSourceOverride[i].disabled) continue;
+				/* collision check */
+				for (j = i + 1; j < 16; j++) {
+					if (interruptSourceOverride[j].disabled) continue;
+					if (interruptSourceOverride[i].globalSystemInterrupt == interruptSourceOverride[j].globalSystemInterrupt) {
+						if (interruptSourceOverride[i].isDefault != interruptSourceOverride[j].isDefault) {
+							if (interruptSourceOverride[i].isDefault) interruptSourceOverride[i].disabled = 1;
+							else interruptSourceOverride[j].disabled = 1;
+						} else {
+							printf_serial_direct("interrupt: interrupt collision for IRQ %u and %u\n", i, j);
+							invalid = 1;
+						}
+					}
+				}
+			}
+			/* MSR exists and x2APIC exists */
+			x2apic_available = (cpuid_edx & 0x20) && (cpuid_ecx & 0x200000);
+			if (x2apic_available) {
+				/* enable x2APIC */
+				__asm__ __volatile__ (
+					"mov $0x1b, %%edx\n\t"
+					"rdmsr\n\t"
+					"or $0x400, %%eax\n\t"
+					"wrmsr\n\t"
+				: : : "%eax", "%ecx", "%edx");
+				/* TPR */
+				write_msr32(0x00, 0x808);
+				/* Sprious Interrupt = 0xff, Disabled */
+				write_msr32(0xff, 0x80f);
+				/* LVT Timer */
+				write_msr32(0x100f0, 0x832);
+				/* LVT Thermal Sensor */
+				write_msr32(0x100f1, 0x833);
+				/* LVT Performance Monitoring */
+				write_msr32(0x100f2, 0x834);
+				/* LVT LINT0 */
+				write_msr32(0x100f3, 0x835);
+				/* LVT LINT1 */
+				write_msr32(0x100f4, 0x836);
+				/* LVT Error */
+				write_msr32(0x100f5, 0x837);
+				if ((cpuid_edx & 0x4008) == 0x4008) { /* MCA & MCE */
+					/* LVT CMCI */
+					write_msr32(0x100f6, 0x82f);
+				}
+				/* APIC id */
+				read_msr32(apicId, 0x802);
+			} else if (lapicHigh != 0) {
+				printf_serial_direct("interrupt: High Local APIC address not supported\n");
+				invalid = 1;
+			} else {
+				/* initialize xAPIC */
+				unsigned int localApicAddr = allocate_region_without_allocation(4096);
+				localApic = (unsigned int*)localApicAddr;
+				map_pde(cr3, localApicAddr, lapic, PAGE_FLAG_CACHE_DISABLE | PAGE_FLAG_WRITE | PAGE_FLAG_PRESENT);
+				/* TPR */
+				localApic[0x80 >> 2] = 0x00;
+				/* Sprious Interrupt = 0xff, Disabled */
+				localApic[0xf0 >> 2] = 0xff;
+				/* LVT Timer */
+				localApic[0x320 >> 2] = 0x100f0;
+				/* LVT Thermal Sensor */
+				localApic[0x330 >> 2] = 0x100f1;
+				/* LVT Performance Monitoring */
+				localApic[0x340 >> 2] = 0x100f2;
+				/* LVT LINT0 */
+				localApic[0x350 >> 2] = 0x100f3;
+				/* LVT LINT1 */
+				localApic[0x360 >> 2] = 0x100f4;
+				/* LVT Error */
+				localApic[0x370 >> 2] = 0x100f5;
+				if ((cpuid_edx & 0x4008) == 0x4008) { /* MCA & MCE */
+					/* LVT CMCI */
+					localApic[0x2f0 >> 2] = 0x100f6;
+				}
+				/* APIC id */
+				apicId = localApic[0x20 >> 2];
+			}
+		}
+		if (!invalid) {
+			unsigned int processorId = 0, processorIdValid = 0;
+			/* initialize I/O APICs */
+			for (i = 0; i < 256; i++) {
+				if (ioapics[i].logicalAddr) {
+					int j;
+					for (j = 0; j < ioapics[i].inum; j++) {
+						/* masked, edge trigger, high active, physical mode, fixed, vector = 0xe0 */
+						ioapics[i].logicalAddr[0] = 0x10 + 2 * j;
+						ioapics[i].logicalAddr[4] = 0x100e0;
+						/* destination = broadcast */
+						ioapics[i].logicalAddr[0] = 0x10 + 2 * j + 1;
+						ioapics[i].logicalAddr[4] = 0xff000000u;
+					}
+				}
+			}
+			/* determine processor ID from APIC ID */
+			table = tableBegin;
+			while ((unsigned int)(table - tableBegin) <= tableSize - 2) {
+				unsigned int type = table[0], length = table[1];
+				if (length <= tableSize && (unsigned int)(table - tableBegin) <= tableSize - length) {
+					switch (type) {
+						case 0: /* Processor Local APIC Structure */
+							if (length >= 8) {
+								if (table[4] & 1) { /* Enabled */
+									if (table[3] == (apicId >> 24)) {
+										processorId = table[2];
+										processorIdValid = 1;
+									}
+								}
+							}
+							break;
+						case 9: /* Processor Local x2APIC Structure */
+							if (length >= 16) {
+								if (table[8] & 1) { /* Enabled */
+									if (read4(&table[4]) == apicId) {
+										processorId = read4(&table[12]);
+										processorIdValid = 1;
+									}
+								}
+							}
+							break;
+					}
+				}
+				table += length;
+			}
+			/* enable local APIC */
+			if (x2apic_available) {
+				write_msr32(0x1ff, 0x80f);
+			} else {
+				localApic[0xf0 >> 2] = 0x1ff;
+			}
+			/* configure NMI */
+			table = tableBegin;
+			while ((unsigned int)(table - tableBegin) <= tableSize - 2) {
+				unsigned int type = table[0], length = table[1];
+				if (length <= tableSize && (unsigned int)(table - tableBegin) <= tableSize - length) {
+					switch (type) {
+						case 3: /* Non-maskable Interrupt Source Structure */
+							if (length >= 8) {
+								int flags = read2(&table[2]);
+								unsigned int interrupt = read4(&table[4]);
+								int pol = flags & 3, tri = (flags >> 2) & 3;
+								for (i = 0; i < 256; i++) {
+									if (ioapics[i].logicalAddr && ioapics[i].ibase <= interrupt &&
+									interrupt - ioapics[i].ibase < ioapics[i].inum) {
+										unsigned int value = 0x00400;
+										if (pol == Pol_activeLow) value |= 0x2000;
+										if (tri == Tri_level) value |= 0x8000;
+										ioapics[i].logicalAddr[0] = 0x10 + 2 * (interrupt - ioapics[i].ibase);
+										ioapics[i].logicalAddr[4] = value;
+										break;
+									}
+								}
+							}
+							break;
+						case 4: /* Local APIC NMI Structure */
+							if (length >= 6) {
+								if (table[2] == 0xff || (processorIdValid && table[2] == processorId)) {
+									int lint = table[5];
+									if (lint == 0 || lint == 1) {
+										int flags = read2(&table[3]);
+										int pol = flags & 3, tri = (flags >> 2) & 3;
+										unsigned int value = 0x00400;
+										if (pol == Pol_activeLow) value |= 0x2000;
+										if (tri == Tri_level) value |= 0x8000;
+										if (x2apic_available) {
+											write_msr32(value, 0x835 + lint);
+										} else {
+											localApic[(0x350 + 0x10 * lint) >> 2] = value;
+										}
+									}
+								}
+							}
+							break;
+						case 0x0A: /* Local x2APIC NMI Structure */
+							if (length >= 12) {
+								unsigned int processorUid = read4(&table[4]);
+								if (processorUid == 0xffffffffu || (processorIdValid && processorUid == processorId)) {
+									int lint = table[8];
+									if (lint == 0 || lint == 1) {
+										int flags = read2(&table[2]);
+										int pol = flags & 3, tri = (flags >> 2) & 3;
+										unsigned int value = 0x00400;
+										if (pol == Pol_activeLow) value |= 0x2000;
+										if (tri == Tri_level) value |= 0x8000;
+										if (x2apic_available) {
+											write_msr32(value, 0x835 + lint);
+										} else {
+											localApic[(0x350 + 0x10 * lint) >> 2] = value;
+										}
+									}
+								}
+							}
+							break;
+					}
+				}
+				table += length;
+			}
+			apic_available = 1;
+		}
+	}
 
-	/* enable slave -> master interrupt */
-	out8_imm8(0xfb, 0x21);
+	if (apic_available) {
+		if (x2apic_available) {
+			interruptMode = INTERRUPT_x2APIC;
+		} else {
+			interruptMode = INTERRUPT_xAPIC;
+		}
+		/* enable interrupts for IRQ */
+		for (i = 0; i < 16; i++) {
+			if (!interruptSourceOverride[i].disabled) {
+				volatile unsigned int* addr = ioapics[interruptSourceOverride[i].ioApicId].logicalAddr;
+				unsigned int value = 0x10020 + i;
+				if (interruptSourceOverride[i].pol == Pol_activeLow) value |= 0x2000;
+				if (interruptSourceOverride[i].tri == Tri_level) value |= 0x8000;
+				addr[0] = 0x10 + interruptSourceOverride[i].ioApicOffset * 2;
+				addr[4] = value;
+			}
+		}
+	} else if (is_8259_available) {
+		interruptMode = INTERRUPT_8259;
+		/* enable slave -> master interrupt */
+		out8_imm8(0xfb, 0x21);
+	} else {
+		interruptMode = INTERRUPT_UNSUPPORTED;
+	}
 
-	sti();
-	return 1;
+	if (interruptMode != INTERRUPT_UNSUPPORTED) {
+		sti();
+		return 1;
+	} else {
+		return 0;
+	}
 }
 
 void setInterruptMask(int irq, int mask) {
-	int data;
-	if (0 <= irq && irq < 8) {
-		in8_imm8(data, 0x21);
-		out8_imm8(mask ? data | (1 << irq) : data & ~(1 << irq), 0x21);
-	} else if (8 <= irq && irq < 16) {
-		in8_imm8(data, 0xA1);
-		out8_imm8(mask ? data | (1 << (irq - 8)) : data & ~(1 << (irq - 8)), 0xA1);
+	unsigned int data;
+	if (interruptMode == INTERRUPT_8259) {
+		if (0 <= irq && irq < 8) {
+			in8_imm8(data, 0x21);
+			out8_imm8(mask ? data | (1 << irq) : data & ~(1 << irq), 0x21);
+		} else if (8 <= irq && irq < 16) {
+			in8_imm8(data, 0xA1);
+			out8_imm8(mask ? data | (1 << (irq - 8)) : data & ~(1 << (irq - 8)), 0xA1);
+		}
+	} else if (interruptMode == INTERRUPT_xAPIC || interruptMode == INTERRUPT_x2APIC) {
+		if (0 <= irq && irq < 16 && !interruptSourceOverride[irq].disabled) {
+			volatile unsigned int* addr = ioapics[interruptSourceOverride[irq].ioApicId].logicalAddr;
+			addr[0] = 0x10 + interruptSourceOverride[irq].ioApicOffset * 2;
+			data = addr[4];
+			addr[4] = mask ? data | 0x10000 : data & ~0x10000;
+		}
 	}
 }
 
@@ -74,10 +477,20 @@ void interrupt_handler(struct interrupt_regs* regs) {
 	if (0 <= regs->interruptId && regs->interruptId < 256 && interruptHandlers[regs->interruptId]) {
 		interruptHandlers[regs->interruptId](regs);
 	}
-	if (0x20 <= regs->interruptId && regs->interruptId < 0x30) {
-		out8_imm8(0x20, 0x20); /* EOI to master */
-	}
-	if (0x28 <= regs->interruptId && regs->interruptId < 0x30) {
-		out8_imm8(0x20, 0xA0); /* EOI to slave */
+	if (interruptMode == INTERRUPT_8259) {
+		if (0x20 <= regs->interruptId && regs->interruptId < 0x30) {
+			out8_imm8(0x20, 0x20); /* EOI to master */
+		}
+		if (0x28 <= regs->interruptId && regs->interruptId < 0x30) {
+			out8_imm8(0x20, 0xA0); /* EOI to slave */
+		}
+	} else if (interruptMode == INTERRUPT_xAPIC) {
+		if (0x20 <= regs->interruptId && regs->interruptId < 0xff) {
+			localApic[0xB0 >> 2] = 0;
+		}
+	} else if (interruptMode == INTERRUPT_x2APIC) {
+		if (0x20 <= regs->interruptId && regs->interruptId < 0xff) {
+			write_msr32(0, 0x80B);
+		}
 	}
 }

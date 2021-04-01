@@ -34,4 +34,16 @@
 #define set_cr3(data) __asm__ __volatile__ \
 	("mov %0, %%cr3\n\t" : : "r"(data))
 
+#define read_msr(low, high, addr) __asm__ __volatile__ ( \
+	"rdmsr\n\t" : "=a"(low), "=d"(high) : "c"(addr))
+
+#define write_msr(low, high, addr) __asm__ __volatile__ ( \
+	"wrmsr\n\t" : : "a"(low), "d"(high), "c"(addr))
+
+#define read_msr32(data, addr) __asm__ __volatile__ ( \
+	"rdmsr\n\t" : "=a"(data) : "c"(addr) : "%edx")
+
+#define write_msr32(data, addr) __asm__ __volatile__ ( \
+	"wrmsr\n\t" : : "a"(data), "c"(addr))
+
 #endif

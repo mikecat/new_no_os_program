@@ -283,3 +283,26 @@ Flags = 0x000D
 * 割り込みが来たら、EOIを書き込む
 
 これらを実装し、テストとしてタイマ(8253)を扱う`12_timer_device_test.c`を用意した。
+
+## xAPIC / x2APIC
+
+以下の手順を用い、xAPIC / x2APICを有効化する。
+
+1. CPUIDでAPICの存在をチェックする
+2. MADTの存在をチェックする
+3. MADTからLocal APICとI/O APICの情報と、IRQの割り当ての情報を取得する
+4. I/O APICを仮想メモリに割り当て、要素数の情報を取得する
+5. IRQをI/O APICに割り当てる
+6. CPUIDでx2APICの存在をチェックし、x2APICまたはxAPICを初期化する
+7. I/O APICを初期化する
+8. MADTとAPIC IDからprocessor IDを得る
+9. 得られたprocessor IDを用いて、MADTに基づいてNMIの設定を行う
+10. IRQ用にI/O APICを設定する
+
+また、マスクやEOIの処理もxAPIC / x2APIC用のものを追加する。
+
+なお、LVT CMCI Registerについてはoptionalのようであり、
+実際にQEMUでは存在しないとしてエラーになっていたようなので、
+CPUIDでMachine Checkの有無を判定し、ある場合のみ初期化するようにした。
+
+参考：[assembly - Questions about APIC interrupt - Stack Overflow](https://stackoverflow.com/questions/57373473/questions-about-apic-interrupt)
