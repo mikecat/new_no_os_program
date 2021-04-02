@@ -41,5 +41,5 @@ AVXを有効化するには、CR4の18ビット目(OSXSAVE)を1にし、
 * [Control register - Wikipedia](https://en.wikipedia.org/wiki/Control_register)
 
 今回はデータのコピーをするだけなので、例外の処理や割り込み時のレジスタの退避は考えなくて良いが、
-SIMDを本格的に利用した居場合は、それらを実装することになるだろう。
+SIMDを本格的に利用したい場合は、それらを実装することになるだろう。
 それはまた要求される時に考えることとする。
