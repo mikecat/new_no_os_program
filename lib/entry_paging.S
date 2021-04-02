@@ -127,6 +127,8 @@ no_long_mode:
 	mov %esp, %edx
 	add $0x1000, %edx
 	and $0xfffff000, %edx
+	# 16-byte align stack for function call
+	and $0xfffffff0, %esp
 	mov %eax, (%esp)
 	# generate 4MB page table
 	xor %ecx, %ecx

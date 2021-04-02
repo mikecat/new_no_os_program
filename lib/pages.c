@@ -351,10 +351,11 @@ void initialize_pages(struct initial_regs* regs) {
 	__asm__ __volatile__ (
 		"mov %0, %%cr3\n\t"
 		"mov $0xffffee00, %%esp\n\t"
+		"mov %1, 4(%%esp)\n\t"
 		"mov %1, (%%esp)\n\t"
-		"push %1\n\t"
 		"call library_initialize\n\t"
-		"pop %%eax\n\t"
+		"mov 4(%%esp), %%eax\n\t"
+		"mov %%eax, (%%esp)\n\t"
 		"call entry\n\t"
 		"1:\n\t"
 		"jmp 1b\n\t"
