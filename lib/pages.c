@@ -160,6 +160,21 @@ void initialize_pages(struct initial_regs* regs) {
 	/* シリアルポートを初期化する (panicで使うので) */
 	init_serial_direct();
 
+	/* CPUID命令が使えるかを確認する */
+	__asm__ __volatile__ (
+		"pushf\n\t"
+		"pop %%eax\n\t"
+		"mov %%eax, %%edx\n\t"
+		"xor $0x00200000, %%eax\n\t"
+		"push %%eax\n\t"
+		"popf\n\t"
+		"pushf\n\t"
+		"pop %%eax\n\t"
+		"xor %%edx, %%eax\n\t"
+		"and $0x00200000, %%eax\n\t"
+	: "=a"(i) : : "%edx");
+	if (i == 0) panic("CPUID not available");
+
 	/* PEヘッダの情報を読み取る */
 	if (read2(pe_header) != 0x5a4d) panic("PE header Magic mismatch");
 	pe_new_header = read4(pe_header + 0x3c);
