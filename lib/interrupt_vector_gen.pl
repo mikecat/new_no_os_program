@@ -24,13 +24,13 @@ interrupt_handler_call:
 	mov \%ds, \%ax
 	mov \$0x10, \%dx
 	mov \%dx, \%ds
-	mov \%ax, (\%ebp)
-	mov \%es, \%ax
 	mov \%ax, -2(\%ebp)
-	mov \%fs, \%ax
+	mov \%es, \%ax
 	mov \%ax, -4(\%ebp)
-	mov \%gs, \%ax
+	mov \%fs, \%ax
 	mov \%ax, -6(\%ebp)
+	mov \%gs, \%ax
+	mov \%ax, -8(\%ebp)
 	cmpl \$0, (fpuSaveMode)
 	jz 1f
 	# jump if TS = 1
@@ -71,13 +71,13 @@ interrupt_handler_call:
 	call interrupt_handler
 
 	# restore registers
-	mov -2(\%ebp), \%ax
-	mov \%ax, \%es
 	mov -4(\%ebp), \%ax
-	mov \%ax, \%fs
+	mov \%ax, \%es
 	mov -6(\%ebp), \%ax
+	mov \%ax, \%fs
+	mov -8(\%ebp), \%ax
 	mov \%ax, \%gs
-	mov (\%ebp), \%ax
+	mov -2(\%ebp), \%ax
 	mov \%ax, \%ds
 	mov \%ebp, \%esp
 	popa
