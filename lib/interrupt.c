@@ -45,6 +45,24 @@ enum {
 
 static int interruptMode = INTERRUPT_UNINITIALIZED;
 
+enum {
+	FPU_NONE = 0,
+	FPU_x87,
+	FPU_SSE,
+	FPU_AVX
+};
+
+int fpuSaveMode = FPU_NONE;
+int fpuSaveSize, fpuSaveAlignmentSize;
+
+enum {
+	FPU_SAVE_NO = 0,
+	FPU_SAVE_MAYBE = 1,
+	FPU_SAVE_YES = 2
+};
+
+int* delayedFpuSavePtr;
+
 static unsigned int read2(const unsigned char* data) {
 	return data[0] | (data[1] << 8);
 }
@@ -89,6 +107,72 @@ int initInterrupt(struct initial_regs* regs) {
 		"cpuid\n\t"
 		"2:\n\t"
 	: "=c"(cpuid_ecx), "=d"(cpuid_edx) : : "%eax", "%ebx");
+
+	/* enable SSE and AVX if available */
+	delayedFpuSavePtr = 0;
+	if (cpuid_edx & 1) {
+		/* basic FPU support */
+		fpuSaveMode = FPU_x87;
+		fpuSaveSize = 108;
+		fpuSaveAlignmentSize = 4;
+		/* set EM = 0, TS = 0, and do FINIT */
+		__asm__ __volatile__ (
+			"mov %%cr0, %%eax\n\t"
+			"and $0xfffffff3, %%eax\n\t"
+			"mov %%eax, %%cr0\n\t"
+			"finit\n\t"
+		: : : "%eax");
+
+		if (cpuid_edx & 0x01000000u) {
+			/* FXSAVE support */
+			fpuSaveMode = FPU_SSE;
+			fpuSaveSize = 512;
+			fpuSaveAlignmentSize = 16;
+			/* enable FXSAVE and SIMD exception */
+			__asm__ __volatile__ (
+				"mov %%cr4, %%eax\n\t"
+				"or $0x600, %%eax\n\t"
+				"mov %%eax, %%cr4\n\t"
+			: : : "%eax");
+
+			if ((cpuid_ecx & (5u << 26)) == (5u << 26)) {
+				/* XSAVE and AVX support */
+				int cpuid_max;
+				__asm__ __volatile__ (
+					/* get maximum index for CPUID */
+					"xor %%eax, %%eax\n\t"
+					"cpuid\n\t"
+				: "=a"(cpuid_max) : : "%ebx", "%ecx", "%edx");
+				if (cpuid_max >= 0x0d) {
+					/* save size get for XSAVE support */
+					fpuSaveMode = FPU_AVX;
+					fpuSaveAlignmentSize = 64;
+					__asm__ __volatile__ (
+						/* enable XSAVE */
+						"mov %%cr4, %%eax\n\t"
+						"or $0x40000, %%eax\n\t"
+						"mov %%eax, %%cr4\n\t"
+						/* enable AVX */
+						"xgetbv\n\t"
+						"or $6, %%eax\n\t"
+						"xsetbv\n\t"
+						/* get save size for XSAVE */
+						"mov $0x0d, %%eax\n\t"
+						"xor %%ecx, %%ecx\n\t"
+						"cpuid\n\t"
+					: "=b"(fpuSaveSize) : : "%eax", "%ecx", "%edx");
+				}
+			}
+		}
+		/* set TS = 1 to avoid unneeded allocation by non-FPU-using program */
+		__asm__ __volatile__ (
+			"mov %%cr0, %%eax\n\t"
+			"or $8, %%eax\n\t"
+			"mov %%eax, %%cr0\n\t"
+		: : : "%eax");
+	} else {
+		fpuSaveMode = FPU_NONE;
+	}
 
 	madt = getAcpiTable("APIC", 0);
 	/* initialize 8259 */
@@ -473,10 +557,61 @@ void registerInterruptHandler(int id, interrupt_handler_type handler) {
 	if (0 <= id && id < 256) interruptHandlers[id] = handler;
 }
 
-void interrupt_handler(struct interrupt_regs* regs) {
+static void commitDelayedFpuSave(void) {
+	unsigned int cr0;
+	/* if TS = 1 */
+	__asm__ __volatile (
+		"mov %%cr0, %0\n\t"
+	: "=r"(cr0));
+	if (cr0 & 8) {
+		/* TS = 0 */
+		__asm__ __volatile__ (
+			"mov %0, %%cr0\n\t"
+		: : "r"(cr0 & ~8));
+		/* save FPU state if it should actually be saved */
+		if (delayedFpuSavePtr != 0) {
+			switch (fpuSaveMode) {
+				case FPU_NONE:
+					/* nothing */
+					break;
+				case FPU_x87:
+					__asm__ __volatile__ (
+						"fsave (%0)\n\t"
+						"fwait\n\t"
+					: : "r"(delayedFpuSavePtr + 1));
+					break;
+				case FPU_SSE:
+					__asm__ __volatile__ (
+						"fwait\n\t"
+						"fxsave (%0)\n\t"
+						"fninit\n\t"
+					: : "r"(delayedFpuSavePtr + 1));
+					break;
+				case FPU_AVX:
+					__asm__ __volatile__ (
+						"mov $0xffffffff, %%eax\n\t"
+						"mov $0xffffffff, %%edx\n\t"
+						"fwait\n\t"
+						"xsave (%0)\n\t"
+						"fninit\n\t"
+					: : "r"(delayedFpuSavePtr + 1) : "%eax", "%edx");
+					break;
+			}
+			*delayedFpuSavePtr = FPU_SAVE_YES;
+		}
+	}
+}
+
+void interrupt_handler(struct interrupt_regs* regs, int* fpuSaveStatus) {
+	if (regs->interruptId == 7) {
+		/* #NM */
+		commitDelayedFpuSave();
+	}
+	/* call interrupt handler */
 	if (0 <= regs->interruptId && regs->interruptId < 256 && interruptHandlers[regs->interruptId]) {
 		interruptHandlers[regs->interruptId](regs);
 	}
+	/* send EOI */
 	if (interruptMode == INTERRUPT_8259) {
 		if (0x20 <= regs->interruptId && regs->interruptId < 0x30) {
 			out8_imm8(0x20, 0x20); /* EOI to master */
@@ -491,6 +626,40 @@ void interrupt_handler(struct interrupt_regs* regs) {
 	} else if (interruptMode == INTERRUPT_x2APIC) {
 		if (0x20 <= regs->interruptId && regs->interruptId < 0xff) {
 			write_msr32(0, 0x80B);
+		}
+	}
+	/* restore FPU */
+	if (*fpuSaveStatus == FPU_SAVE_MAYBE) {
+		/* TS = 0 */
+		__asm__ __volatile__ (
+			"mov %%cr0, %%eax\n\t"
+			"and $0xfffffff7, %%eax\n\t"
+			"mov %%eax, %%cr0\n\t"
+		: : : "%eax");
+	} else if (*fpuSaveStatus == FPU_SAVE_YES) {
+		commitDelayedFpuSave();
+		/* restore saved status */
+		switch (fpuSaveMode) {
+			case FPU_NONE:
+				/* nothing */
+				break;
+			case FPU_x87:
+				__asm__ __volatile__ (
+					"frstor (%0)\n\t"
+				: : "r"(fpuSaveStatus + 1));
+				break;
+			case FPU_SSE:
+				__asm__ __volatile__ (
+					"fxrstor (%0)\n\t"
+				: : "r"(fpuSaveStatus + 1));
+				break;
+			case FPU_AVX:
+				__asm__ __volatile__ (
+					"mov $0xffffffff, %%eax\n\t"
+					"mov $0xffffffff, %%edx\n\t"
+					"xrstor (%0)\n\t"
+				: : "r"(fpuSaveStatus + 1) : "%eax", "%edx");
+				break;
 		}
 	}
 }
