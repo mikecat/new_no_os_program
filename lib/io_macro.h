@@ -3,6 +3,7 @@
 
 #define cli() __asm__ __volatile__ ("cli\n\t")
 #define sti() __asm__ __volatile__ ("sti\n\t")
+#define hlt() __asm__ __volatile__ ("hlt\n\t")
 
 #define in8_imm8(data, port) __asm__ __volatile__ \
 	("xor %%eax, %%eax\n\tin %1, %%al\n\t" : "=a"(data) : "N"(port))

@@ -26,7 +26,5 @@ void entry(struct initial_regs* regs) {
 	in8(stat, 0x03FC);
 	out8(stat | 0x08, 0x03FC); /* enable interrupt */
 	setInterruptMask(4, 0);
-	for(;;) {
-		__asm__ __volatile__ ("hlt\n\t");
-	}
+	for(;;) hlt();
 }

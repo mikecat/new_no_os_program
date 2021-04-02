@@ -24,7 +24,5 @@ void entry(struct initial_regs* regs) {
 	out8_imm8(counterSet, 0x40);
 	out8_imm8(counterSet >> 8, 0x40);
 	setInterruptMask(0, 0);
-	for(;;) {
-		__asm__ __volatile__ ("hlt\n\t");
-	}
+	for(;;) hlt();
 }

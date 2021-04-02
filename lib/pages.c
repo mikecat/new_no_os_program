@@ -358,6 +358,7 @@ void initialize_pages(struct initial_regs* regs) {
 		"mov %%eax, (%%esp)\n\t"
 		"call entry\n\t"
 		"1:\n\t"
+		"hlt\n\t"
 		"jmp 1b\n\t"
 	: : "r"(next_pde), "r"(regs));
 }

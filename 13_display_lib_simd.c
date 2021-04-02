@@ -7,16 +7,12 @@
 
 void ud_handler(struct interrupt_regs* regs) {
 	printf_serial_direct("#UD thrown at eip=0x%08X\n", regs->eip);
-	for (;;) {
-		__asm__ __volatile__("hlt\n");
-	}
+	for (;;) hlt();
 }
 
 void gp_handler(struct interrupt_regs* regs) {
 	printf_serial_direct("#GP thrown at eip=0x%08X\n", regs->eip);
-	for (;;) {
-		__asm__ __volatile__("hlt\n");
-	}
+	for (;;) hlt();
 }
 
 void entry(struct initial_regs* regs) {

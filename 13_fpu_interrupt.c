@@ -42,7 +42,5 @@ void entry(struct initial_regs* regs) {
 		currentValue = calculationValue;
 		currentIter++;
 	}
-	for(;;) {
-		__asm__ __volatile__ ("hlt\n\t");
-	}
+	for(;;) hlt();
 }
