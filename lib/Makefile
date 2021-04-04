@@ -7,7 +7,7 @@ TARGET=libnnop.a
 TARGET_D=libnnop_d.a
 
 OBJS=serial_direct.o my_printf.o entry_paging.o pages.o panic.o display.o initialize.o \
-	call_uefi.o acpi.o uefi_printf.o interrupt_vector.o interrupt.o
+	call_uefi.o acpi.o uefi_printf.o interrupt_vector.o interrupt.o font.o memory_utils.o
 
 OBJS_D=$(join $(addsuffix _d,$(basename $(OBJS))),$(suffix $(OBJS)))
 
@@ -49,13 +49,16 @@ $(TARGET_D): $(OBJS_D)
 interrupt_vector.S: interrupt_vector_gen.pl
 	perl $^ > $@
 
+font.c: font_gen.pl font.bmp
+	perl $< > $@
+
 .PHONY: clean
 clean: clean-release clean-debug
 
 .PHONY: clean-release
 clean-release:
-	$(RM) $(TARGET) $(OBJS) interrupt_vector.S
+	$(RM) $(TARGET) $(OBJS) interrupt_vector.S font.c
 
 .PHONY: clean-debug
 clean-debug:
-	$(RM) $(TARGET_D) $(OBJS_D) interrupt_vector.S
+	$(RM) $(TARGET_D) $(OBJS_D) interrupt_vector.S font.c
