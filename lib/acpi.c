@@ -1,6 +1,6 @@
 #include "acpi.h"
 #include "io_macro.h"
-#include "serial_direct.h"
+#include "text_display.h"
 
 static const unsigned int guidTarget[] = {
 	0x8868e871u, 0x11d3e4f1u, 0x800022bcu, 0x81883cc7u
@@ -59,7 +59,7 @@ int initAcpi(struct initial_regs* regs) {
 			return initAcpiWithRsdp((unsigned int*)element[4]);
 		}
 	}
-	printf_serial_direct("ACPI: RSDP not found\n");
+	printfTextDisplay("ACPI: RSDP not found\n");
 	initialized = 0;
 	return 0;
 }
@@ -74,7 +74,7 @@ int initAcpiWithRsdp(unsigned int* rsdp_arg) {
 	xsdt = (unsigned int*)(rsdp[7] == 0 ? rsdp[6] : 0);
 	fadt = getAcpiTable("FACP", 0);
 	if (fadt == 0) {
-		printf_serial_direct("ACPI: FADT not found\n");
+		printfTextDisplay("ACPI: FADT not found\n");
 		return 0;
 	}
 	dsdt = (unsigned int*)fadt[10];
@@ -84,42 +84,42 @@ int initAcpiWithRsdp(unsigned int* rsdp_arg) {
 	pm1a_cnt_blk = fadt[16];
 	pm1b_cnt_blk = fadt[17];
 	if (dsdt[1] < 36) {
-		printf_serial_direct("ACPI: DSDT too small\n");
+		printfTextDisplay("ACPI: DSDT too small\n");
 		return 0;
 	}
 	aml = (unsigned char*)&dsdt[9];
 	aml_size = dsdt[1] - 36;
 	s5 = searchPuttern(aml, s5Target, aml_size, sizeof(s5Target));
 	if (s5 == 0) {
-		printf_serial_direct("ACPI: _S5_ not found\n");
+		printfTextDisplay("ACPI: _S5_ not found\n");
 		return 0;
 	}
 	s5_size = aml_size - (s5 - aml);
 	if (searchPuttern(s5 + 1, s5Target, s5_size - 1, sizeof(s5Target)) != 0) {
-		printf_serial_direct("ACPI: multiple _S5_ found\n");
+		printfTextDisplay("ACPI: multiple _S5_ found\n");
 		return 0;
 	}
 	if (s5_size < 7) {
-		printf_serial_direct("ACPI: _S5_ too small\n");
+		printfTextDisplay("ACPI: _S5_ too small\n");
 		return 0;
 	}
 	s5_data_size = s5[6];
 	if (s5_data_size >= 0x40) {
-		printf_serial_direct("ACPI: _S5_ data too big\n");
+		printfTextDisplay("ACPI: _S5_ data too big\n");
 		return 0;
 	}
 	if (s5_data_size > s5_size - 6) {
-		printf_serial_direct("ACPI: _S5_ data out-of-range\n");
+		printfTextDisplay("ACPI: _S5_ data out-of-range\n");
 		return 0;
 	}
 	if (s5[7] < 2) {
-		printf_serial_direct("ACPI: _S5_ too few elements\n");
+		printfTextDisplay("ACPI: _S5_ too few elements\n");
 		return 0;
 	}
 	s5_offset = 2;
 	for (i = 0; i < 2; i++) {
 		if (s5_offset >= s5_data_size) {
-			printf_serial_direct("ACPI: _S5_ unexpected end of data\n");
+			printfTextDisplay("ACPI: _S5_ unexpected end of data\n");
 			return 0;
 		}
 		if (s5[6 + s5_offset] == 0x00) {
@@ -127,13 +127,13 @@ int initAcpiWithRsdp(unsigned int* rsdp_arg) {
 			s5_offset++;
 		} else if (s5[6 + s5_offset] == 0x0a) {
 			if (++s5_offset >= s5_data_size) {
-				printf_serial_direct("ACPI: _S5_ unexpected end of data\n");
+				printfTextDisplay("ACPI: _S5_ unexpected end of data\n");
 				return 0;
 			}
 			s5_got[i] = s5[6 + s5_offset];
 			s5_offset++;
 		} else {
-			printf_serial_direct("ACPI: _S5_ unsupported data\n");
+			printfTextDisplay("ACPI: _S5_ unsupported data\n");
 			return 0;
 		}
 	}

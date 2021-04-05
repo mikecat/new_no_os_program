@@ -2,7 +2,7 @@
 #include "acpi.h"
 #include "serial_direct.h"
 
-unsigned int gdt[] = {
+static unsigned int gdt[] = {
 	0, 0,
 	0x0000ffffu, 0x00cf9a00u, /* 0x08 code segment */
 	0x0000ffffu, 0x00cf9200u  /* 0x10 data segment */

@@ -2,7 +2,7 @@
 #include "acpi.h"
 #include "pages.h"
 #include "io_macro.h"
-#include "serial_direct.h"
+#include "text_display.h"
 #include "memory_utils.h"
 
 /* interrupt_vector.S */
@@ -197,7 +197,7 @@ int initInterrupt(struct initial_regs* regs) {
 								ioapics[id].logicalAddr = (unsigned int*)0xffffffffu;
 								ioapics[id].ibase = read4(&table[8]);
 							} else if (!ioapics[id].is_sapic) {
-								printf_serial_direct("interrupt: multiple I/O APIC id %d\n", id);
+								printfTextDisplay("interrupt: multiple I/O APIC id %d\n", id);
 								invalid = 1;
 							}
 						}
@@ -228,11 +228,11 @@ int initInterrupt(struct initial_regs* regs) {
 								ioapics[id].logicalAddr = (unsigned int*)0xffffffffu;
 								ioapics[id].ibase = read4(&table[4]);
 								if (read4(&table[12]) != 0) {
-									printf_serial_direct("interrupt: high I/O SAPIC address not supported\n");
+									printfTextDisplay("interrupt: high I/O SAPIC address not supported\n");
 									invalid = 1;
 								}
 							} else {
-								printf_serial_direct("interrupt: multiple I/O SAPIC id %d\n", id);
+								printfTextDisplay("interrupt: multiple I/O SAPIC id %d\n", id);
 								invalid = 1;
 							}
 						}
@@ -276,7 +276,7 @@ int initInterrupt(struct initial_regs* regs) {
 							if (interruptSourceOverride[i].isDefault) interruptSourceOverride[i].disabled = 1;
 							else interruptSourceOverride[j].disabled = 1;
 						} else {
-							printf_serial_direct("interrupt: interrupt collision for IRQ %u and %u\n", i, j);
+							printfTextDisplay("interrupt: interrupt collision for IRQ %u and %u\n", i, j);
 							invalid = 1;
 						}
 					}
@@ -315,7 +315,7 @@ int initInterrupt(struct initial_regs* regs) {
 				/* APIC id */
 				read_msr32(apicId, 0x802);
 			} else if (lapicHigh != 0) {
-				printf_serial_direct("interrupt: High Local APIC address not supported\n");
+				printfTextDisplay("interrupt: High Local APIC address not supported\n");
 				invalid = 1;
 			} else {
 				/* initialize xAPIC */

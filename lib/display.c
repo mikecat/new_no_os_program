@@ -2,7 +2,7 @@
 #include "regs.h"
 #include "io_macro.h"
 #include "pages.h"
-#include "serial_direct.h"
+#include "text_display.h"
 #include "call_uefi.h"
 
 static struct display_info displayInfo;
@@ -77,7 +77,7 @@ static int initializeDisplayInfo_ident(void* data) {
 		res = call_uefi(regs, LocateProtocol,
 			(unsigned int)gop_guid + ADDR_OFFSET, 0, (unsigned int)&gops[0], 0, 0);
 		if (res < 0) {
-			printf_serial_direct("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
+			printfTextDisplay("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
 			return 0;
 		}
 		gop = gops[0];
@@ -85,7 +85,7 @@ static int initializeDisplayInfo_ident(void* data) {
 			(unsigned int)gop, (unsigned int)(gop->Mode == 0 ? 0 : gop->Mode->Mode),
 			(unsigned int)&infoSize[0], (unsigned int)&info[0], 0);
 		if (res < 0) {
-			printf_serial_direct("display: QueryMode error 0x%08x\n", (unsigned int)res);
+			printfTextDisplay("display: QueryMode error 0x%08x\n", (unsigned int)res);
 			return 0;
 		}
 
@@ -116,14 +116,14 @@ static int initializeDisplayInfo_ident(void* data) {
 		res = call_uefi(regs, LocateProtocol,
 			(unsigned int)gop_guid + ADDR_OFFSET, 0, (unsigned int)&gop, 0, 0);
 		if (res < 0) {
-			printf_serial_direct("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
+			printfTextDisplay("display: LocateProtocol error 0x%08x\n", (unsigned int)res);
 			return 0;
 		}
 		res = call_uefi(regs, gop->QueryMode,
 			(unsigned int)gop, (unsigned int)(gop->Mode == 0 ? 0 : gop->Mode->Mode),
 			(unsigned int)&infoSize, (unsigned int)&info, 0);
 		if (res < 0) {
-			printf_serial_direct("display: QueryMode error 0x%08x\n", (unsigned int)res);
+			printfTextDisplay("display: QueryMode error 0x%08x\n", (unsigned int)res);
 			return 0;
 		}
 
