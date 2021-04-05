@@ -1,5 +1,52 @@
 #include "memory_utils.h"
 
+void initializeFpuAndSimd(void) {
+	unsigned int cpuid_max;
+	__asm__ __volatile__ (
+		"xor %%eax, %%eax\n\t"
+		"cpuid\n\t"
+	: "=a"(cpuid_max) : : "%ebx", "%ecx", "%edx");
+	if (cpuid_max >= 1) {
+		unsigned int cpuid_edx, cpuid_ecx;
+		__asm__ __volatile__ (
+			"mov $1, %%eax\n\t"
+			"cpuid\n\t"
+		: "=d"(cpuid_edx), "=c"(cpuid_ecx) : : "%eax", "%ebx");
+		if (cpuid_edx & 1) {
+			/* FPU supported */
+			__asm__ __volatile__ (
+				/* set EM = 0, TS = 0, and do FINIT */
+				"mov %%cr0, %%eax\n\t"
+				"and $0xfffffff3, %%eax\n\t"
+				"mov %%eax, %%cr0\n\t"
+				"finit\n\t"
+			: : : "%eax");
+		}
+		if (((cpuid_edx >> 24) & 3) == 3) {
+			/* FXSAVE and SSE supported */
+			__asm__ __volatile__ (
+				/* enable FXSAVE and SIMD exception */
+				"mov %%cr4, %%eax\n\t"
+				"or $0x600, %%eax\n\t"
+				"mov %%eax, %%cr4\n\t"
+			: : : "%eax");
+		}
+		if (((cpuid_ecx >> 26) & 5) == 5 && cpuid_max >= 0x0d) {
+			/* XSAVE and AVX supported, get XSAVE size supported */
+			__asm__ __volatile__ (
+				/* enable XSAVE */
+				"mov %%cr4, %%eax\n\t"
+				"or $0x40000, %%eax\n\t"
+				"mov %%eax, %%cr4\n\t"
+				/* enable AVX */
+				"xgetbv\n\t"
+				"or $6, %%eax\n\t"
+				"xsetbv\n\t"
+			: : : "%eax");
+		}
+	}
+}
+
 int checkSimdAvailability(void) {
 	int result = 0;
 	unsigned int cpuid_max, cpuid_edx, cpuid_ecx;
@@ -18,13 +65,17 @@ int checkSimdAvailability(void) {
 		"cpuid\n\t"
 		"1:\n\t"
 	: "=m"(cpuid_max), "=d"(cpuid_edx), "=c"(cpuid_ecx) : : "%eax", "%ebx");
-	if (cpuid_edx & (1 << 25)) result |= SIMD_AVAILABILITY_SSE;
-	if (cpuid_edx & (1 << 26)) result |= SIMD_AVAILABILITY_SSE2;
-	if (cpuid_ecx & (1 << 0)) result |= SIMD_AVAILABILITY_SSE3;
-	if (cpuid_ecx & (1 << 9)) result |= SIMD_AVAILABILITY_SSSE3;
-	if (cpuid_ecx & (1 << 19)) result |= SIMD_AVAILABILITY_SSE41;
-	if (cpuid_ecx & (1 << 20)) result |= SIMD_AVAILABILITY_SSE42;
-	if (((cpuid_ecx >> 27) & 3) == 3) {
+	if (cpuid_edx & 1) result |= SIMD_AVAILABILITY_FPU;
+	if (cpuid_edx & (1 << 23)) result |= SIMD_AVAILABILITY_MMX;
+	if (cpuid_edx & (1 << 24)) { /* FXSAVE supported */
+		if (cpuid_edx & (1 << 25)) result |= SIMD_AVAILABILITY_SSE;
+		if (cpuid_edx & (1 << 26)) result |= SIMD_AVAILABILITY_SSE2;
+		if (cpuid_ecx & (1 << 0)) result |= SIMD_AVAILABILITY_SSE3;
+		if (cpuid_ecx & (1 << 9)) result |= SIMD_AVAILABILITY_SSSE3;
+		if (cpuid_ecx & (1 << 19)) result |= SIMD_AVAILABILITY_SSE41;
+		if (cpuid_ecx & (1 << 20)) result |= SIMD_AVAILABILITY_SSE42;
+	}
+	if (((cpuid_ecx >> 27) & 3) == 3) { /* XSAVE enabled and AVX supported */
 		unsigned int xcr0;
 		__asm__ __volatile__ (
 			"xor %%ecx, %%ecx\n\t"

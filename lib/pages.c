@@ -4,6 +4,7 @@
 #include "panic.h"
 #include "call_uefi.h"
 #include "serial_direct.h"
+#include "memory_utils.h"
 
 unsigned int gdt[] = {
 	0, 0,
@@ -174,6 +175,8 @@ void initialize_pages(struct initial_regs* regs) {
 		"and $0x00200000, %%eax\n\t"
 	: "=a"(i) : : "%edx");
 	if (i == 0) panic("CPUID not available");
+	/* SIMDを初期化する */
+	initializeFpuAndSimd();
 
 	/* PEヘッダの情報を読み取る */
 	if (read2(pe_header) != 0x5a4d) panic("PE header Magic mismatch");

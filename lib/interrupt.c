@@ -3,6 +3,7 @@
 #include "pages.h"
 #include "io_macro.h"
 #include "serial_direct.h"
+#include "memory_utils.h"
 
 /* interrupt_vector.S */
 extern unsigned int interrupt_handler_list[];
@@ -74,7 +75,8 @@ static unsigned int read4(const unsigned char* data) {
 int initInterrupt(struct initial_regs* regs) {
 	unsigned int i;
 	unsigned int* madt;
-	unsigned int cpuid_ecx, cpuid_edx;
+	int simdAvailability;
+	unsigned int cpuid_edx, cpuid_ecx;
 	int is_8259_available = 0, apic_available = 0, x2apic_available = 0;
 	if (interruptMode != INTERRUPT_UNINITIALIZED) return interruptMode != INTERRUPT_UNSUPPORTED;
 
@@ -93,85 +95,38 @@ int initInterrupt(struct initial_regs* regs) {
 		"add $8, %%esp\n\t"
 	: : "r"(interruptGate), "a"(sizeof(interruptGate)) : "memory");
 
-	__asm__ __volatile__ (
-		"xor %%eax, %%eax\n\t"
-		"cpuid\n\t"
-		"test %%eax, %%eax\n\t"
-		"jnz 1f\n\t"
-		/* eax = 0 -> CPUID with eax=1 not available */
-		"xor %%ecx, %%ecx\n\t"
-		"xor %%edx, %%edx\n\t"
-		"jmp 2f\n\t"
-		"1:\n\t"
-		"mov $1, %%eax\n\t"
-		"cpuid\n\t"
-		"2:\n\t"
-	: "=c"(cpuid_ecx), "=d"(cpuid_edx) : : "%eax", "%ebx");
-
 	/* enable SSE and AVX if available */
+	simdAvailability = checkSimdAvailability();
 	delayedFpuSavePtr = 0;
-	if (cpuid_edx & 1) {
+	if (simdAvailability & SIMD_AVAILABILITY_AVX) {
+		/* AVX (XSAVE) support */
+		fpuSaveMode = FPU_AVX;
+		fpuSaveAlignmentSize = 64;
+		__asm__ __volatile__ (
+			"mov $0x0d, %%eax\n\t"
+			"xor %%ecx, %%ecx\n\t"
+			"cpuid\n\t"
+		: "=b"(fpuSaveSize) : : "%eax", "%ecx", "%edx");
+	} else if (simdAvailability & SIMD_AVAILABILITY_SSE) {
+		/* SSE (FXSAVE) support */
+		fpuSaveMode = FPU_SSE;
+		fpuSaveSize = 512;
+		fpuSaveAlignmentSize = 16;
+	} else if (simdAvailability & SIMD_AVAILABILITY_FPU) {
 		/* basic FPU support */
 		fpuSaveMode = FPU_x87;
 		fpuSaveSize = 108;
 		fpuSaveAlignmentSize = 4;
-		/* set EM = 0, TS = 0, and do FINIT */
-		__asm__ __volatile__ (
-			"mov %%cr0, %%eax\n\t"
-			"and $0xfffffff3, %%eax\n\t"
-			"mov %%eax, %%cr0\n\t"
-			"finit\n\t"
-		: : : "%eax");
-
-		if (cpuid_edx & 0x01000000u) {
-			/* FXSAVE support */
-			fpuSaveMode = FPU_SSE;
-			fpuSaveSize = 512;
-			fpuSaveAlignmentSize = 16;
-			/* enable FXSAVE and SIMD exception */
-			__asm__ __volatile__ (
-				"mov %%cr4, %%eax\n\t"
-				"or $0x600, %%eax\n\t"
-				"mov %%eax, %%cr4\n\t"
-			: : : "%eax");
-
-			if ((cpuid_ecx & (5u << 26)) == (5u << 26)) {
-				/* XSAVE and AVX support */
-				int cpuid_max;
-				__asm__ __volatile__ (
-					/* get maximum index for CPUID */
-					"xor %%eax, %%eax\n\t"
-					"cpuid\n\t"
-				: "=a"(cpuid_max) : : "%ebx", "%ecx", "%edx");
-				if (cpuid_max >= 0x0d) {
-					/* save size get for XSAVE support */
-					fpuSaveMode = FPU_AVX;
-					fpuSaveAlignmentSize = 64;
-					__asm__ __volatile__ (
-						/* enable XSAVE */
-						"mov %%cr4, %%eax\n\t"
-						"or $0x40000, %%eax\n\t"
-						"mov %%eax, %%cr4\n\t"
-						/* enable AVX */
-						"xgetbv\n\t"
-						"or $6, %%eax\n\t"
-						"xsetbv\n\t"
-						/* get save size for XSAVE */
-						"mov $0x0d, %%eax\n\t"
-						"xor %%ecx, %%ecx\n\t"
-						"cpuid\n\t"
-					: "=b"(fpuSaveSize) : : "%eax", "%ecx", "%edx");
-				}
-			}
-		}
-		/* set TS = 1 to avoid unneeded allocation by non-FPU-using program */
+	} else {
+		fpuSaveMode = FPU_NONE;
+	}
+	/* set TS = 1 to avoid unneeded allocation by non-FPU-using program */
+	if (fpuSaveMode != FPU_NONE) {
 		__asm__ __volatile__ (
 			"mov %%cr0, %%eax\n\t"
 			"or $8, %%eax\n\t"
 			"mov %%eax, %%cr0\n\t"
 		: : : "%eax");
-	} else {
-		fpuSaveMode = FPU_NONE;
 	}
 
 	madt = getAcpiTable("APIC", 0);
@@ -195,6 +150,20 @@ int initInterrupt(struct initial_regs* regs) {
 		out8_imm8(0xff, 0xA1);
 	}
 	/* initialize APIC */
+	__asm__ __volatile__ (
+		"xor %%eax, %%eax\n\t"
+		"cpuid\n\t"
+		"test %%eax, %%eax\n\t"
+		"jnz 2f\n\t"
+		/* CPUID with eax=1 not supported */
+		"xor %%ecx, %%ecx\n\t"
+		"xor %%edx, %%edx\n\t"
+		"jmp 1f\n\t"
+		"2:\n\t"
+		"mov $1, %%eax\n\t"
+		"cpuid\n\t"
+		"1:\n\t"
+	: "=d"(cpuid_edx), "=c"(cpuid_ecx) : : "%eax", "%ebx");
 	if ((cpuid_edx & 0x200) && madt != 0 && madt[1] >= 46) {
 		unsigned int lapic = madt[9], lapicHigh = 0;
 		unsigned char* tableBegin = (unsigned char*)&madt[11];
