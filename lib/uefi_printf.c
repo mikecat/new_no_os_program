@@ -75,12 +75,16 @@ static int uefiPrintfCallback(const char* str, int str_len, void* status) {
 	return callWithIdentStack(uefiPrintfCallbackForIdentStack, &isd);
 }
 
+int uefiVPrintf(const char* format, va_list args) {
+	return my_vprintf_base(uefiPrintfCallback, 0, format, args);
+}
+
 int uefiPrintf(const char* format, ...) {
 	va_list vl;
 	int ret;
 	if (!initialized) return -1;
 	va_start(vl, format);
-	ret = my_vprintf_base(uefiPrintfCallback, 0, format, vl);
+	ret = uefiVPrintf(format, vl);
 	va_end(vl);
 	return ret;
 }

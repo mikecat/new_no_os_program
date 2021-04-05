@@ -72,11 +72,15 @@ static int printf_serial_direct_callback(const char* str, int str_len, void* sta
 	return 1;
 }
 
+int vprintf_serial_direct(const char* format, va_list args) {
+	return my_vprintf_base(printf_serial_direct_callback, 0, format, args);
+}
+
 int printf_serial_direct(const char* format, ...) {
 	va_list vl;
 	int ret;
 	va_start(vl, format);
-	ret = my_vprintf_base(printf_serial_direct_callback, 0, format, vl);
+	ret = vprintf_serial_direct(format, vl);
 	va_end(vl);
 	return ret;
 }
