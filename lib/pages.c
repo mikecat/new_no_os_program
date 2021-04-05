@@ -4,6 +4,7 @@
 #include "panic.h"
 #include "call_uefi.h"
 #include "serial_direct.h"
+#include "uefi_printf.h"
 #include "memory_utils.h"
 
 unsigned int gdt[] = {
@@ -158,8 +159,9 @@ void initialize_pages(struct initial_regs* regs) {
 	unsigned int current_addr;
 	int i, j;
 
-	/* シリアルポートを初期化する (panicで使うので) */
+	/* 出力デバイスを初期化する (panicで使うので) */
 	init_serial_direct();
+	uefiPrintfInit(regs);
 
 	/* CPUID命令が使えるかを確認する */
 	__asm__ __volatile__ (

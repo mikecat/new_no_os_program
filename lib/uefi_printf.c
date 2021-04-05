@@ -69,10 +69,18 @@ static int uefiPrintfCallbackForIdentStack(void* data) {
 
 static int uefiPrintfCallback(const char* str, int str_len, void* status) {
 	struct identStackData isd;
+	unsigned int esp;
 	isd.str = str;
 	isd.str_len = str_len;
 	(void)status;
-	return callWithIdentStack(uefiPrintfCallbackForIdentStack, &isd);
+	__asm__ __volatile__ (
+		"mov %%esp, %0\n\t"
+	: "=r"(esp));
+	if (esp >= 0xc0000000u) {
+		return callWithIdentStack(uefiPrintfCallbackForIdentStack, &isd);
+	} else {
+		return uefiPrintfCallbackForIdentStack(&isd);
+	}
 }
 
 int uefiVPrintf(const char* format, va_list args) {
