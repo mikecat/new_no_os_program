@@ -17,4 +17,6 @@ void initializeFpuAndSimd(void);
 
 int checkSimdAvailability(void);
 
+void copyMemory(void* dst, const void* src, unsigned int size);
+
 #endif
