@@ -2,7 +2,7 @@
 #include "acpi.h"
 #include "serial_direct.h"
 
-static unsigned int gdt[] = {
+unsigned int simple_gdt[] = {
 	0, 0,
 	0x0000ffffu, 0x00cf9a00u, /* 0x08 code segment */
 	0x0000ffffu, 0x00cf9200u  /* 0x10 data segment */
@@ -37,7 +37,7 @@ void entry(void* placeholder, unsigned int* theTable) {
 			"push %ebp\n\t"
 			"mov %esp, %ebp\n\t"
 			"sub $16, %esp\n\t"
-			"movl $gdt, 4(%esp)\n\t"
+			"movl $simple_gdt, 4(%esp)\n\t"
 			"movl $0, 8(%esp)\n\t"
 			"movw $23, 2(%esp)\n\t"
 			"lea 2(%esp), %eax\n\t"
