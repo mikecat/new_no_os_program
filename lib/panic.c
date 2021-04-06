@@ -1,6 +1,7 @@
 #include "panic.h"
 #include "io_macro.h"
 #include "text_display.h"
+#include "serial.h"
 
 void panic(const char* message) {
 	cli();
@@ -10,5 +11,6 @@ void panic(const char* message) {
 		printfTextDisplay(" : %s", message);
 	}
 	printfTextDisplay("\n");
+	flushSerial();
 	for(;;) hlt();
 }

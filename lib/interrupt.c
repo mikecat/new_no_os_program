@@ -526,6 +526,15 @@ void registerInterruptHandler(int id, interrupt_handler_type handler) {
 	if (0 <= id && id < 256) interruptHandlers[id] = handler;
 }
 
+int getIF(void) {
+	int eflags;
+	__asm__ __volatile__ (
+		"pushf\n\t"
+		"pop %0\n\t"
+	: "=g"(eflags));
+	return !!(eflags & 0x200);
+}
+
 static void commitDelayedFpuSave(void) {
 	unsigned int cr0;
 	/* if TS = 1 */

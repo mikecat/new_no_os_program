@@ -4,10 +4,12 @@
 #include "acpi.h"
 #include "interrupt.h"
 #include "text_display.h"
+#include "serial.h"
 
 void library_initialize(struct initial_regs* regs) {
 	initializeDisplayInfo(regs);
 	initializeTextDisplay();
 	initAcpi(regs);
 	initInterrupt(regs);
+	initSerial();
 }

@@ -5,7 +5,7 @@
 #include "io_macro.h"
 #include "memory_utils.h"
 #include "my_printf.h"
-#include "serial_direct.h"
+#include "serial.h"
 #include "uefi_printf.h"
 
 /* 初期化前に出力された文字を初期化時に描画するために保存する用のバッファサイズ */
@@ -247,7 +247,7 @@ static int printfTextDisplayCallback(const char* str, int str_len, void* status)
 			if (beforeInitializeBufferSize >= BEFORE_INITIALIZE_BUFFER_MAX) return 0;
 			beforeInitializeBuffer[beforeInitializeBufferSize++] = c;
 		}
-		putchar_serial_direct(str[i]);
+		serialPutchar(str[i]);
 	}
 	return 1;
 }

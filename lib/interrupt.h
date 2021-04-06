@@ -18,4 +18,6 @@ void setInterruptMask(int irq, int mask);
 
 void registerInterruptHandler(int id, interrupt_handler_type handler);
 
+int getIF(void);
+
 #endif
