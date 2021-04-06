@@ -9,6 +9,7 @@ struct display_info {
 	int width;
 	int height;
 	int pixelFormat;
+	int pixelBitMask[4];
 	int pixelPerScanLine;
 };
 
@@ -17,5 +18,8 @@ int initializeDisplayInfo(struct initial_regs* regs);
 
 /* デイスプレイの情報を得る。初期化されていない場合はNULLを返す。 */
 const struct display_info* getDisplayInfo(void);
+
+/* RGB(それぞれ0～255)の値から色データを得る。 */
+unsigned int displayGetColor(int r, int g, int b);
 
 #endif

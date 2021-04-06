@@ -11,7 +11,7 @@ static int initialized;
 
 struct gop_info {
 	int Version, Width, Height, PixelFormat;
-	int something[4];
+	int PixelBitMask[4];
 	int PixelPerScanLine;
 };
 
@@ -101,6 +101,11 @@ static int initializeDisplayInfo_ident(void* data) {
 		displayInfo.width = gop->Mode->info->Width;
 		displayInfo.height = gop->Mode->info->Height;
 		displayInfo.pixelFormat = gop->Mode->info->PixelFormat;
+		if (displayInfo.pixelFormat == 2) {
+			for (i = 0; i < 4; i++) displayInfo.pixelBitMask[i] = gop->Mode->info->PixelBitMask[i];
+		} else {
+			for (i = 0; i < 4; i++) displayInfo.pixelBitMask[i] = 0;
+		}
 		displayInfo.pixelPerScanLine = gop->Mode->info->PixelPerScanLine;
 	} else {
 		unsigned int* arg_table = (unsigned int*)((unsigned int*)regs->iregs.esp)[2];
@@ -139,7 +144,16 @@ static int initializeDisplayInfo_ident(void* data) {
 		displayInfo.width = gop->Mode->info->Width;
 		displayInfo.height = gop->Mode->info->Height;
 		displayInfo.pixelFormat = gop->Mode->info->PixelFormat;
+		if (displayInfo.pixelFormat == 2) {
+			for (i = 0; i < 4; i++) displayInfo.pixelBitMask[i] = gop->Mode->info->PixelBitMask[i];
+		} else {
+			for (i = 0; i < 4; i++) displayInfo.pixelBitMask[i] = 0;
+		}
 		displayInfo.pixelPerScanLine = gop->Mode->info->PixelPerScanLine;
+	}
+	if (displayInfo.pixelFormat < 0 || 2 < displayInfo.pixelFormat) {
+		printfTextDisplay("display: unsupported pixel format %d\n", displayInfo.pixelFormat);
+		return 0;
 	}
 	return 1;
 }
@@ -151,4 +165,57 @@ int initializeDisplayInfo(struct initial_regs* regs) {
 
 const struct display_info* getDisplayInfo(void) {
 	return initialized ? &displayInfo : 0;
+}
+
+unsigned int displayGetColor(int r, int g, int b) {
+	if (!initialized) return 0;
+	switch (displayInfo.pixelFormat) {
+		case 0:
+			return ((b & 0xff) << 16) | ((g & 0xff) << 8) | (r & 0xff);
+		case 1:
+			return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+		case 2:
+			{
+				unsigned int rcount = 0, gcount = 0, bcount = 0;
+				unsigned int rvalue, gvalue, bvalue;
+				unsigned int result = 0;
+				int i;
+				for (i = 0; i < 32; i++) {
+					if ((displayInfo.pixelBitMask[0] >> i) & 1) rcount++;
+					if ((displayInfo.pixelBitMask[1] >> i) & 1) gcount++;
+					if ((displayInfo.pixelBitMask[2] >> i) & 1) bcount++;
+				}
+				if (rcount <= 24) {
+					rvalue = (r & 0xff) * ((1 << rcount) - 1) / 255;
+				} else {
+					rvalue = (r & 0xff) << (rcount - 8);
+				}
+				if (gcount <= 24) {
+					gvalue = (g & 0xff) * ((1 << bcount) - 1) / 255;
+				} else {
+					gvalue = (g & 0xff) << (gcount - 8);
+				}
+				if (bcount <= 24) {
+					bvalue = (b & 0xff) * ((1 << bcount) - 1) / 255;
+				} else {
+					bvalue = (b & 0xff) << (bcount - 8);
+				}
+				for (i = 0; i < 32; i++) {
+					if ((displayInfo.pixelBitMask[0] >> i) & 1) {
+						result |= rvalue & 1;
+						rvalue >>= 1;
+					}
+					if ((displayInfo.pixelBitMask[1] >> i) & 1) {
+						result |= gvalue & 1;
+						gvalue >>= 1;
+					}
+					if ((displayInfo.pixelBitMask[2] >> i) & 1) {
+						result |= bvalue & 1;
+						bvalue >>= 1;
+					}
+				}
+				return result;
+			}
+	}
+	return 0;
 }

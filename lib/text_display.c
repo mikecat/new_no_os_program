@@ -32,6 +32,8 @@ static int screenPixelWidth, screenPixelHeight, screenPixelStride;
 static void* vram;
 static unsigned int vramSize;
 
+static unsigned int textBackColor, textColor, scrollBarBackColor, scrollBarColor;
+
 static int characterWidth, characterHeight;
 static unsigned char* characterData;
 static unsigned int* displayBuffer;
@@ -48,7 +50,7 @@ static void renderTextDisplay(void);
 int initializeTextDisplay(void) {
 	unsigned int* cr3;
 	const struct display_info* di;
-	int i;
+	int i, j;
 	if (initialized) return 1;
 	/* get display information */
 	di = getDisplayInfo();
@@ -58,6 +60,11 @@ int initializeTextDisplay(void) {
 	screenPixelStride = di->pixelPerScanLine;
 	vram = di->vram;
 	vramSize = di->vramSize;
+	/* get color information */
+	textBackColor = displayGetColor(0, 0, 0);
+	textColor = displayGetColor(255, 255, 255);
+	scrollBarBackColor = displayGetColor(64, 64, 64);
+	scrollBarColor = displayGetColor(192, 192, 192);
 	/* initialize buffer information */
 	characterWidth = (screenPixelWidth - MARGIN_WIDTH * 2 - SCROLL_BAR_REGION_WIDTH) / CHAR_DRAW_WIDTH;
 	characterHeight = (screenPixelHeight - MARGIN_HEIGHT * 2) / LINE_HEIGHT;
@@ -70,6 +77,17 @@ int initializeTextDisplay(void) {
 	get_cr3(cr3);
 	characterData = (unsigned char*)allocate_region(cr3, characterWidth * SCREEN_LINE_MAX);
 	displayBuffer = (unsigned int*)allocate_region(cr3, vramSize);
+	/* initialize buffer */
+	for (i = 0; i < characterHeight; i++) {
+		for (j = 0; j < characterWidth; j++) {
+			characterData[i * characterWidth + j] = 0;
+		}
+	}
+	for (i = 0; i < screenPixelHeight; i++) {
+		for (j = 0; j < screenPixelWidth; j++) {
+			displayBuffer[i * screenPixelWidth + j] = textBackColor;
+		}
+	}
 
 	/* mark as initialized */
 	initialized = 1;
@@ -188,7 +206,7 @@ static void renderTextDisplay(void) {
 			for (py = 0; py < FONT_HEIGHT; py++) {
 				for (px = 0; px < FONT_WIDTH; px++) {
 					displayBuffer[(oy + py) * screenPixelStride + (ox + px)] =
-						(font_data[c][py] >> (FONT_WIDTH - 1 - px)) & 1 ? 0xffffff : 0x000000;
+						(font_data[c][py] >> (FONT_WIDTH - 1 - px)) & 1 ? textColor : textBackColor;
 				}
 			}
 		}
@@ -211,7 +229,7 @@ static void renderTextDisplay(void) {
 	for (y = 0; y < screenPixelHeight; y++) {
 		for (x = 0; x < SCROLL_BAR_WIDTH; x++) {
 			displayBuffer[y * screenPixelStride + (scrollBarX + x)] =
-				scrollBarStart <= y && y < scrollBarEnd ? 0xC0C0C0 : 0x404040;
+				scrollBarStart <= y && y < scrollBarEnd ? scrollBarColor : scrollBarBackColor;
 		}
 	}
 	/* send to screen */
