@@ -98,7 +98,7 @@ static void serialInterruptHandler(struct interrupt_regs* regs) {
 
 int initSerial(void) {
 	unsigned int* cr3;
-	int stat, interruptId;
+	int interruptId;
 	/* initialize buffer */
 	get_cr3(cr3);
 	tx_buffer = (unsigned char*)allocate_region(cr3, TX_BUFFER_SIZE);
@@ -113,9 +113,6 @@ int initSerial(void) {
 	/* check if FIFO is available */
 	in8(interruptId, 0x03FA);
 	fifo_available = !!(interruptId & 0xC0);
-	/* enable interrupt */
-	in8(stat, 0x03FC);
-	out8(stat | 0x08, 0x03FC);
 	/* register interrupt */
 	registerInterruptHandler(0x24, serialInterruptHandler);
 	/* enable interrupt */
