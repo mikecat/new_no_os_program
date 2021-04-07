@@ -55,7 +55,7 @@ static void receiveData(void) {
 	for (;;) {
 		int rxFlag, data;
 		/* check if more data is available */
-		in8(rxFlag, 0x03FC);
+		in8(rxFlag, 0x03FD);
 		if (!(rxFlag & 1)) break;
 		/* read the data */
 		in8(data, 0x03F8);
@@ -98,7 +98,7 @@ static void serialInterruptHandler(struct interrupt_regs* regs) {
 
 int initSerial(void) {
 	unsigned int* cr3;
-	int interruptId;
+	int stat, interruptId;
 	/* initialize buffer */
 	get_cr3(cr3);
 	tx_buffer = (unsigned char*)allocate_region(cr3, TX_BUFFER_SIZE);
@@ -113,10 +113,13 @@ int initSerial(void) {
 	/* check if FIFO is available */
 	in8(interruptId, 0x03FA);
 	fifo_available = !!(interruptId & 0xC0);
+	/* enable interrupt */
+	in8(stat, 0x03FC);
+	out8(stat | 0x08, 0x03FC);
 	/* register interrupt */
 	registerInterruptHandler(0x24, serialInterruptHandler);
 	/* enable interrupt */
-	setInterruptMask(0x24, 0);
+	setInterruptMask(4, 0);
 
 	/* mark as initialized */
 	initialized = 1;
