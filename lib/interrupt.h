@@ -20,4 +20,16 @@ void registerInterruptHandler(int id, interrupt_handler_type handler);
 
 int getIF(void);
 
+#define APIC_ONE_SHOT 0
+#define APIC_PERIODIC 1
+#define APIC_TSC_DEADLINE 2
+
+int isApicTimerAvailable(void);
+void setApicTimerDivider(int divider);
+void setApicTimerMode(int mode);
+void setApicTimerInterruptMask(int mask);
+void setApicTimerInitialCount(unsigned int count);
+unsigned int getApicTimerInitialCount(void);
+unsigned int getApicTimerCurrentCount(void);
+
 #endif

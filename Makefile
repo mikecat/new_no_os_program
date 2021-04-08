@@ -23,7 +23,7 @@ TARGETS_PAGING= \
 	11_uefi_printf_test.img 12_madt.img 12_divzero.img 12_timer_device_test.img \
 	12_madt_uefi_print.img 12_serial_test.img 13_display_lib_buffer.img \
 	13_display_lib_simd.img 13_fpu_interrupt.img 14_text_display_test.img \
-	15_text_display_test.img 15_print_many.img \
+	15_text_display_test.img 15_print_many.img 16_timer.img \
 # --- END_OF_TARGETS ---
 
 TARGETS=$(TARGETS_NO_PAGING) $(TARGETS_PAGING)

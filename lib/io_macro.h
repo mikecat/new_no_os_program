@@ -11,11 +11,17 @@
 #define in16_imm8(data, port) __asm__ __volatile__ \
 	("xor %%eax, %%eax\n\tin %1, %%ax\n\t" : "=a"(data) : "N"(port))
 
+#define in32_imm8(data, port) __asm__ __volatile__ \
+	("in %1, %%eax\n\t" : "=a"(data) : "N"(port))
+
 #define in8(data, port) __asm__ __volatile__ \
 	("xor %%eax, %%eax\n\tin %%dx, %%al\n\t" : "=a"(data) : "d"(port))
 
 #define in16(data, port) __asm__ __volatile__ \
 	("xor %%eax, %%eax\n\tin %%dx, %%ax\n\t" : "=a"(data) : "d"(port))
+
+#define in32(data, port) __asm__ __volatile__ \
+	("in %%dx, %%eax\n\t" : "=a"(data) : "d"(port))
 
 #define out8_imm8(data, port) __asm__ __volatile__ \
 	("out %%al, %1\n\t" : : "a"(data), "N"(port))
@@ -23,11 +29,17 @@
 #define out16_imm8(data, port) __asm__ __volatile__ \
 	("out %%ax, %1\n\t" : : "a"(data), "N"(port))
 
+#define out32_imm8(data, port) __asm__ __volatile__ \
+	("out %%eax, %1\n\t" : : "a"(data), "N"(port))
+
 #define out8(data, port) __asm__ __volatile__ \
 	("out %%al, %%dx\n\t" : : "a"(data), "d"(port))
 
 #define out16(data, port) __asm__ __volatile__ \
 	("out %%ax, %%dx\n\t" : : "a"(data), "d"(port))
+
+#define out32(data, port) __asm__ __volatile__ \
+	("out %%eax, %%dx\n\t" : : "a"(data), "d"(port))
 
 #define get_cr3(data) __asm__ __volatile__ \
 	("mov %%cr3, %0\n\t" : "=r"(data))

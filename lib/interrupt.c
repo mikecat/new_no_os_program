@@ -297,20 +297,20 @@ int initInterrupt(struct initial_regs* regs) {
 				/* Sprious Interrupt = 0xff, Disabled */
 				write_msr32(0xff, 0x80f);
 				/* LVT Timer */
-				write_msr32(0x100f0, 0x832);
+				write_msr32(0x10030, 0x832);
 				/* LVT Thermal Sensor */
-				write_msr32(0x100f1, 0x833);
+				write_msr32(0x10031, 0x833);
 				/* LVT Performance Monitoring */
-				write_msr32(0x100f2, 0x834);
+				write_msr32(0x10032, 0x834);
 				/* LVT LINT0 */
-				write_msr32(0x100f3, 0x835);
+				write_msr32(0x10033, 0x835);
 				/* LVT LINT1 */
-				write_msr32(0x100f4, 0x836);
+				write_msr32(0x10034, 0x836);
 				/* LVT Error */
-				write_msr32(0x100f5, 0x837);
+				write_msr32(0x10035, 0x837);
 #if 0
 				/* LVT CMCI */
-				write_msr32(0x100f6, 0x82f);
+				write_msr32(0x10036, 0x82f);
 #endif
 				/* APIC id */
 				read_msr32(apicId, 0x802);
@@ -327,20 +327,20 @@ int initInterrupt(struct initial_regs* regs) {
 				/* Sprious Interrupt = 0xff, Disabled */
 				localApic[0xf0 >> 2] = 0xff;
 				/* LVT Timer */
-				localApic[0x320 >> 2] = 0x100f0;
+				localApic[0x320 >> 2] = 0x10030;
 				/* LVT Thermal Sensor */
-				localApic[0x330 >> 2] = 0x100f1;
+				localApic[0x330 >> 2] = 0x10031;
 				/* LVT Performance Monitoring */
-				localApic[0x340 >> 2] = 0x100f2;
+				localApic[0x340 >> 2] = 0x10032;
 				/* LVT LINT0 */
-				localApic[0x350 >> 2] = 0x100f3;
+				localApic[0x350 >> 2] = 0x10033;
 				/* LVT LINT1 */
-				localApic[0x360 >> 2] = 0x100f4;
+				localApic[0x360 >> 2] = 0x10034;
 				/* LVT Error */
-				localApic[0x370 >> 2] = 0x100f5;
+				localApic[0x370 >> 2] = 0x10035;
 #if 0
 				/* LVT CMCI */
-				localApic[0x2f0 >> 2] = 0x100f6;
+				localApic[0x2f0 >> 2] = 0x10036;
 #endif
 				/* APIC id */
 				apicId = localApic[0x20 >> 2];
@@ -533,6 +533,79 @@ int getIF(void) {
 		"pop %0\n\t"
 	: "=g"(eflags));
 	return !!(eflags & 0x200);
+}
+
+int isApicTimerAvailable(void) {
+	return interruptMode == INTERRUPT_xAPIC || interruptMode == INTERRUPT_x2APIC;
+}
+
+void setApicTimerDivider(int divider) {
+	unsigned int value;
+	if (divider <= 1) value = 0xB;
+	else if (divider <= 2) value = 0x0;
+	else if (divider <= 4) value = 0x1;
+	else if (divider <= 8) value = 0x2;
+	else if (divider <= 16) value = 0x3;
+	else if (divider <= 32) value = 0x8;
+	else if (divider <= 64) value = 0x9;
+	else value = 0xA;
+	if (interruptMode == INTERRUPT_xAPIC) {
+		localApic[0x3E0 >> 2] = value;
+	} else if (interruptMode == INTERRUPT_x2APIC) {
+		write_msr32(value, 0x83E);
+	}
+}
+
+void setApicTimerMode(int mode) {
+	unsigned int value;
+	if (interruptMode == INTERRUPT_xAPIC) {
+		value = localApic[0x320 >> 2];
+		localApic[0x320 >> 2] = (value & ~(3 << 17)) | ((mode & 3) << 17);
+	} else if (interruptMode == INTERRUPT_x2APIC) {
+		read_msr32(value, 0x832);
+		write_msr32((value & ~(3 << 17)) | ((mode & 3) << 17), 0x832);
+	}
+}
+
+void setApicTimerInterruptMask(int mask) {
+	unsigned int value;
+	if (interruptMode == INTERRUPT_xAPIC) {
+		value = localApic[0x320 >> 2];
+		localApic[0x320 >> 2] = mask ? (value | (1 << 16)) : (value & ~(1 << 16));
+	} else if (interruptMode == INTERRUPT_x2APIC) {
+		read_msr32(value, 0x832);
+		write_msr32(mask ? (value | (1 << 16)) : (value & ~(1 << 16)), 0x832);
+	}
+}
+
+void setApicTimerInitialCount(unsigned int count) {
+	if (interruptMode == INTERRUPT_xAPIC) {
+		localApic[0x380 >> 2] = count;
+	} else if (interruptMode == INTERRUPT_x2APIC) {
+		write_msr32(count, 0x838);
+	}
+}
+
+unsigned int getApicTimerInitialCount(void) {
+	if (interruptMode == INTERRUPT_xAPIC) {
+		return localApic[0x380 >> 2];
+	} else if (interruptMode == INTERRUPT_x2APIC) {
+		unsigned int value;
+		read_msr32(value, 0x838);
+		return value;
+	}
+	return 0;
+}
+
+unsigned int getApicTimerCurrentCount(void) {
+	if (interruptMode == INTERRUPT_xAPIC) {
+		return localApic[0x390 >> 2];
+	} else if (interruptMode == INTERRUPT_x2APIC) {
+		unsigned int value;
+		read_msr32(value, 0x839);
+		return value;
+	}
+	return 0;
 }
 
 static void commitDelayedFpuSave(void) {

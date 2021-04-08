@@ -5,6 +5,7 @@
 #include "interrupt.h"
 #include "text_display.h"
 #include "serial.h"
+#include "timer.h"
 
 void library_initialize(struct initial_regs* regs) {
 	initializeDisplayInfo(regs);
@@ -12,4 +13,5 @@ void library_initialize(struct initial_regs* regs) {
 	initAcpi(regs);
 	initInterrupt(regs);
 	initSerial();
+	initializeTimer();
 }
