@@ -95,7 +95,7 @@ int initInterrupt(struct initial_regs* regs) {
 		"add $8, %%esp\n\t"
 	: : "r"(interruptGate), "a"(sizeof(interruptGate)) : "memory");
 
-	/* enable SSE and AVX if available */
+	/* enable SSE and AVX register saving if available */
 	simdAvailability = checkSimdAvailability();
 	delayedFpuSavePtr = 0;
 	if (simdAvailability & SIMD_AVAILABILITY_AVX) {
@@ -120,7 +120,7 @@ int initInterrupt(struct initial_regs* regs) {
 	} else {
 		fpuSaveMode = FPU_NONE;
 	}
-	/* set TS = 1 to avoid unneeded allocation by non-FPU-using program */
+	/* set TS = 1 to avoid unneeded allocation in non-FPU-using program */
 	if (fpuSaveMode != FPU_NONE) {
 		__asm__ __volatile__ (
 			"mov %%cr0, %%eax\n\t"
