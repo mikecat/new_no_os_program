@@ -5,6 +5,9 @@
 #include "io_macro.h"
 #include "text_display.h"
 
+/* 何msごとにカウントするか */
+#define TIMER_UNIT 4
+
 #define TIMER_MAX 512
 
 static int initialized = 0;
@@ -105,8 +108,15 @@ int initializeTimer(void) {
 				/* APIC Timer was too fast, increment divider and retry */
 			} else {
 				/* initialize APIC Timer */
+				unsigned int timerValue;
+				__asm__ __volatile__ (
+					"mul %2\n\t"
+					"mov $1000, %%ecx\n\t"
+					"div %%ecx\n\t"
+				: "=a"(timerValue) : "a"(0xffffffffu - localApicTimerEndTime), "c"(TIMER_UNIT)
+				: "%edx", "cc");
 				setApicTimerMode(APIC_PERIODIC);
-				setApicTimerInitialCount((0xffffffffu - localApicTimerEndTime) / 1000);
+				setApicTimerInitialCount(timerValue);
 				registerInterruptHandler(0x30, timerInterruptHandler);
 				setApicTimerInterruptMask(0);
 				localApicTimerOk = 1;
@@ -117,7 +127,7 @@ int initializeTimer(void) {
 
 	if (!localApicTimerOk) {
 		/* use 8253 timer (fallback) */
-		int counterSet = 3579545 / (3 * 1000); /* about 1ms interval */
+		int counterSet = 3579545 * TIMER_UNIT / (3 * 1000); /* about TIMER_UNIT ms interval */
 		out8_imm8(0x34, 0x43); /* set timer 0 to pulse generation binary mode */
 		out8_imm8(counterSet, 0x40);
 		out8_imm8(counterSet >> 8, 0x40);
@@ -133,15 +143,18 @@ static void timerInterruptHandler(struct interrupt_regs* regs) {
 	int iflag = getIF();
 	(void)regs;
 	cli();
-	tick++;
+	tick += TIMER_UNIT;
 	if (timerList) {
 		struct timerData* expiredNodes = 0;
-		timerList->durationLeft--;
-		while (timerList && timerList->durationLeft == 0) {
-			struct timerData* thisNode = timerList;
-			timerList = timerList->next;
-			thisNode->next = expiredNodes;
-			expiredNodes = thisNode;
+		if (timerList->durationLeft <= TIMER_UNIT) {
+			do {
+				struct timerData* thisNode = timerList;
+				timerList = timerList->next;
+				thisNode->next = expiredNodes;
+				expiredNodes = thisNode;
+			} while (timerList && timerList->durationLeft == 0);
+		} else {
+			timerList->durationLeft -= TIMER_UNIT;
 		}
 		while (expiredNodes != 0) {
 			struct timerData* thisNode = expiredNodes;
