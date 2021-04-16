@@ -639,6 +639,11 @@ static void commitDelayedFpuSave(void) {
 					: : "r"(delayedFpuSavePtr + 1));
 					break;
 				case FPU_AVX:
+					/* initialize XSAVE header */
+					{
+						int i;
+						for (i = 0; i < 16; i++) delayedFpuSavePtr[1 + (512 >> 2) + i] = 0;
+					}
 					__asm__ __volatile__ (
 						"mov $0xffffffff, %%eax\n\t"
 						"mov $0xffffffff, %%edx\n\t"

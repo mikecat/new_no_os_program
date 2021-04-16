@@ -64,6 +64,11 @@ SIMDを本格的に利用したい場合は、それらを実装することに�
 FSAVEのアラインメントの制約は書かれておらず、
 FXSAVEは16バイト、XSAVEは64バイトのアラインメントが要求される。
 
+さらに、
+[Intel® 64 and IA-32 Architectures Software Developer Manuals](https://software.intel.com/content/www/us/en/develop/articles/intel-sdm.html)
+のVolume 3の13.5.4によると、XSAVEを使う前にXSAVE headerをゼロクリアしないといけないようである。
+XSAVE headerは、XSAVEで使う領域の512バイト目からの64バイトである。 (Volume 1の13.4.2より)
+
 ### 遅延退避
 
 保存に用いる領域のサイズは、

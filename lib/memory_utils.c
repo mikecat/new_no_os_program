@@ -38,11 +38,20 @@ void initializeFpuAndSimd(void) {
 				"mov %%cr4, %%eax\n\t"
 				"or $0x40000, %%eax\n\t"
 				"mov %%eax, %%cr4\n\t"
+				/* get mask for XSETBV */
+				"mov $0x0d, %%eax\n\t"
+				"xor %%ecx, %%ecx\n\t"
+				"cpuid\n\t"
+				"mov %%eax, %%ebx\n\t"
+				"mov %%edx, %%esi\n\t"
 				/* enable AVX */
+				"xor %%ecx, %%ecx\n\t"
 				"xgetbv\n\t"
 				"or $6, %%eax\n\t"
+				"and %%ebx, %%eax\n\t"
+				"and %%esi, %%edx\n\t"
 				"xsetbv\n\t"
-			: : : "%eax");
+			: : : "%eax", "%ebx", "%ecx","%edx", "%esi");
 		}
 	}
 }
