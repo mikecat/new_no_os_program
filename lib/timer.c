@@ -109,6 +109,8 @@ int initializeTimer(void) {
 			} else {
 				/* initialize APIC Timer */
 				unsigned int timerValue;
+				/* オーバーフローしないよう、上位をedxに格納してくれる命令を使う
+				TIMER_UNITが1000以下なら、割り算の結果はオーバーフローしないはず */
 				__asm__ __volatile__ (
 					"mul %2\n\t"
 					"mov $1000, %%ecx\n\t"
