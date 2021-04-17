@@ -148,6 +148,9 @@ int initInterrupt(struct initial_regs* regs) {
 		/* OCW1 (interrupt mask) */
 		out8_imm8(0xff, 0x21);
 		out8_imm8(0xff, 0xA1);
+		/* OCW3 (set to read ISS) */
+		out8_imm8(0x03, 0x20);
+		out8_imm8(0x03, 0xA0);
 	}
 	/* initialize APIC */
 	__asm__ __volatile__ (
@@ -659,29 +662,63 @@ static void commitDelayedFpuSave(void) {
 }
 
 void interrupt_handler(struct interrupt_regs* regs, int* fpuSaveStatus) {
+	int isReal = 1;
 	if (regs->interruptId == 7) {
 		/* #NM */
 		commitDelayedFpuSave();
 	}
-	/* call interrupt handler */
-	if (0 <= regs->interruptId && regs->interruptId < 256 && interruptHandlers[regs->interruptId]) {
-		interruptHandlers[regs->interruptId](regs);
-	}
-	/* send EOI */
+	/* spurious interrupt check */
 	if (interruptMode == INTERRUPT_8259) {
-		if (0x20 <= regs->interruptId && regs->interruptId < 0x30) {
-			out8_imm8(0x20, 0x20); /* EOI to master */
-		}
-		if (0x28 <= regs->interruptId && regs->interruptId < 0x30) {
-			out8_imm8(0x20, 0xA0); /* EOI to slave */
+		if (regs->interruptId == 0x27) {
+			/* interrupt from master */
+			int status;
+			in8_imm8(status, 0x20);
+			if (!(status & 0x80)) {
+				/* IS7 not set, spurious! */
+				isReal = 0;
+			}
+		} else if (regs->interruptId == 0x2f) {
+			/* interrupt from slave */
+			int status;
+			in8_imm8(status, 0xA0);
+			if (!(status & 0x80)) {
+				/* IS7 not set, spurious! */
+				isReal = 0;
+				out8_imm8(0x20, 0x20); /* EOI to master */
+			}
 		}
 	} else if (interruptMode == INTERRUPT_xAPIC) {
-		if (0x20 <= regs->interruptId && regs->interruptId < 0xff) {
-			localApic[0xB0 >> 2] = 0;
+		if (regs->interruptId == 0xff) {
+			if (!(localApic[0x170 >> 2] & 0x80000000u)) isReal = 0;
 		}
 	} else if (interruptMode == INTERRUPT_x2APIC) {
-		if (0x20 <= regs->interruptId && regs->interruptId < 0xff) {
-			write_msr32(0, 0x80B);
+		if (regs->interruptId == 0xff) {
+			unsigned int status;
+			read_msr32(status, 0x817);
+			if (!(status & 0x80000000u)) isReal = 0;
+		}
+	}
+	if (isReal) {
+		/* call interrupt handler */
+		if (0 <= regs->interruptId && regs->interruptId < 256 && interruptHandlers[regs->interruptId]) {
+			interruptHandlers[regs->interruptId](regs);
+		}
+		/* send EOI */
+		if (interruptMode == INTERRUPT_8259) {
+			if (0x20 <= regs->interruptId && regs->interruptId < 0x30) {
+				out8_imm8(0x20, 0x20); /* EOI to master */
+			}
+			if (0x28 <= regs->interruptId && regs->interruptId < 0x30) {
+				out8_imm8(0x20, 0xA0); /* EOI to slave */
+			}
+		} else if (interruptMode == INTERRUPT_xAPIC) {
+			if (0x20 <= regs->interruptId && regs->interruptId < 0xff) {
+				localApic[0xB0 >> 2] = 0;
+			}
+		} else if (interruptMode == INTERRUPT_x2APIC) {
+			if (0x20 <= regs->interruptId && regs->interruptId < 0xff) {
+				write_msr32(0, 0x80B);
+			}
 		}
 	}
 	/* restore FPU */
